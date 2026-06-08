@@ -1,0 +1,4 @@
+.venv/
+venv/
+**/.venv/
+chroma_data/
