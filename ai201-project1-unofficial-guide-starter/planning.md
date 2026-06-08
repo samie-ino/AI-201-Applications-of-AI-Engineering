@@ -46,11 +46,18 @@ This Unofficial Guide covers practical first-year survival knowledge for Univers
      numbers fit the structure of your documents.
      A review-heavy corpus warrants different chunking than a long FAQ. -->
 
-**Chunk size:** _(TBD in Milestone 2 — likely ~400–600 tokens)_
+**Chunk size:** Target ~200 tokens, hard max 256 tokens.
 
-**Overlap:** _(TBD — likely ~50–100 tokens)_
+**Overlap:** ~40 tokens, applied *only* when a single long section has to be split mid-topic — not between already-separate reviews/answers.
 
-**Reasoning:** Skim notes — the corpus has two distinct shapes. (1) Long-form OU Daily columns and the official parking FAQ spread one topic across several paragraphs, which favors larger chunks with overlap so a single tip isn't split mid-thought. (2) Reddit comments, Quora answers, and Roomsurf reviews are self-contained, one tip per comment, which favors smaller chunks (roughly one comment = one chunk). Final numbers to be confirmed after fully reading the documents in Milestone 2.
+**Approach:** Structure-aware recursive splitting, not a blind sliding window:
+
+1. Split each document on its natural boundaries first — paragraphs (`\n\n`), then sentences.
+2. Greedily group adjacent units up to the ~200-token target.
+3. Only when a *single* unit exceeds the 256-token max do we split it and add the ~40-token overlap so a tip isn't severed mid-thought.
+4. Merge any leftover fragment under ~30 tokens into its neighbor so we don't embed near-empty chunks.
+
+**Reasoning:** The corpus has two distinct shapes. (1) Long-form OU Daily columns and the official parking FAQ spread one topic across several paragraphs — the recursive split keeps a tip intact and adds overlap when a paragraph is too long. (2) Quora answers and Roomsurf reviews are self-contained, one tip per comment — splitting on boundaries first means each short review stays its own chunk with no cross-bleed from overlap. The **256-token ceiling is dictated by the embedding model**: all-MiniLM-L6-v2 truncates input past 256 tokens, so any larger chunk would lose its tail before embedding and become unretrievable. Chunks carry `source`, `url`, and `date` metadata so dated 2014–2019 advice can be distinguished from the current official FAQ at generation time.
 
 ---
 
