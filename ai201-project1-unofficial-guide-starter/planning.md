@@ -69,11 +69,13 @@ This Unofficial Guide covers practical first-year survival knowledge for Univers
      would you weigh in choosing a different embedding model — context length, multilingual
      support, accuracy on domain-specific text, latency? -->
 
-**Embedding model:**
+**Embedding model:** `all-MiniLM-L6-v2` via `sentence-transformers`. It's lightweight, runs locally with no API cost or rate limits, and produces 384-dim embeddings that are strong for short-passage semantic similarity — a good fit for a corpus of student tips and reviews. Its 256-token input ceiling is what dictates the 256-token hard max in the Chunking Strategy above, so the two sections are deliberately consistent.
 
-**Top-k:**
+**Top-k:** 4. With a small 10-source corpus chunked at ~200 tokens, k=4 gives the LLM enough surrounding context to answer questions whose evidence is spread across a couple of paragraphs (e.g. study spots cited in two different articles) without padding the prompt with weak, off-topic matches. Too few (k=1–2) risks missing the chunk that actually holds the answer; too many (k=8+) dilutes the prompt with low-relevance text the model may latch onto. I'll revisit k during evaluation if retrieval looks thin or noisy.
 
-**Production tradeoff reflection:**
+**Why semantic search works here:** Embeddings map text to vectors by *meaning*, not exact words, so a query like "where can I park for free" retrieves a chunk about "Lloyd Noble Center + CART shuttle" even though it shares almost no literal vocabulary with the query — exactly what's needed for paraphrased, opinion-based student language.
+
+**Production tradeoff reflection:** If this were a real deployment and cost weren't a constraint, I'd weigh: (1) **Context length** — MiniLM truncates at 256 tokens, forcing small chunks; a model like OpenAI `text-embedding-3-large` or Voyage handles far longer inputs, so I could embed whole reviews without splitting and losing context across boundaries. (2) **Domain accuracy** — a larger or domain-tuned model would better distinguish near-synonyms ("dorm" vs "residential college") that matter in this corpus. (3) **Latency & hosting** — MiniLM is local and fast; an API-hosted model adds network latency and a per-call dependency but offloads compute. (4) **Multilingual** — not needed for an English-only OU corpus, so I wouldn't pay for it here. The net tradeoff: MiniLM is the right *free, local* choice for this project; at scale I'd move to a longer-context hosted model primarily to stop chunk-boundary information loss.
 
 ---
 
@@ -86,11 +88,11 @@ This Unofficial Guide covers practical first-year survival knowledge for Univers
 
 | # | Question | Expected answer |
 |---|----------|-----------------|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
-| 5 | | |
+| 1 | What study spots do OU students recommend, including quieter or lesser-known ones for finals week? | Bizzell Memorial Library, Sarkeys Energy Center, the Beaird Lounge, and the Honors College are the commonly cited spots (Source 5). For finals, students point to lesser-known/quieter options beyond the main library to avoid crowds (Source 6). A good answer names at least one mainstream spot and one lesser-known spot. |
+| 2 | How should a freshman manage their meal points so they don't run out before the semester ends? | Budget meal points across the semester rather than overspending early; treat them as a fixed balance and pace daily spending so they last (Sources 1 and 7). A good answer mentions pacing/budgeting and not front-loading spending. |
+| 3 | Which apps do OU students consider essential? | The official OU app, Canvas (coursework/LMS), a campus map app, and transit apps are listed as must-haves (Source 3). A good answer names at least the OU app and Canvas. |
+| 4 | Where can students park for free near campus, and how do they get to main campus from there? | Lloyd Noble Center offers free parking, and students take the CART shuttle to main campus (Source 10). A good answer names Lloyd Noble + the CART shuttle connection. |
+| 5 | What do students honestly say about living in the Adams, Couch, and Walker tower dorms? | Candid reviews compare the older high-rise towers (Adams/Couch/Walker) against the newer residential colleges, covering tradeoffs like room size, community feel, and condition (Source 9). A good answer reflects the experiential tower-vs-residential-college comparison rather than official marketing copy. |
 
 ---
 
@@ -114,6 +116,32 @@ This Unofficial Guide covers practical first-year survival knowledge for Univers
      You can use ASCII art, a Mermaid diagram, or embed a sketch as an image.
      You'll use this diagram as context when prompting AI tools to implement each stage. -->
 
+```
+                          INDEXING (offline, run once)
+  ┌──────────────┐   ┌──────────────┐   ┌────────────────┐   ┌──────────────────┐
+  │  1. Ingest   │──▶│  2. Chunk    │──▶│  3. Embed      │──▶│ 4. Vector Store  │
+  │  documents/  │   │ structure-   │   │ all-MiniLM-    │   │   ChromaDB       │
+  │  (.txt/.md/  │   │ aware split  │   │ L6-v2          │   │ PersistentClient │
+  │   .html)     │   │ ~200 tok,    │   │ (sentence-     │   │ ./chroma_data    │
+  │              │   │ 256 max +    │   │  transformers) │   │ + metadata:      │
+  │              │   │ 40 overlap   │   │  384-dim       │   │  source/url/date │
+  └──────────────┘   └──────────────┘   └────────────────┘   └────────┬─────────┘
+                                                                       │
+  ─────────────────────────────────────────────────────────────────  │  ──────────
+                          QUERY TIME (per user question)               │
+                                                                       ▼
+  ┌──────────────┐   ┌────────────────┐   ┌──────────────┐   ┌──────────────────┐
+  │ User query   │──▶│ Embed query    │──▶│ 5. Retrieve  │──▶│ 6. Generate      │
+  │ (Gradio/     │   │ same MiniLM    │   │ top-k = 4    │   │ Groq LLM, answer │
+  │  Streamlit)  │   │ model          │   │ nearest      │   │ grounded ONLY in │
+  │              │◀──────────────────────────────────────── │ retrieved chunks │
+  │  answer +    │   │                │   │ chunks from  │   │ + cites source   │
+  │  sources     │   │                │   │ ChromaDB     │   │ metadata         │
+  └──────────────┘   └────────────────┘   └──────────────┘   └──────────────────┘
+```
+
+**Stage → tool:** Ingestion = Python file reading (`pdfplumber` only if PDFs added) · Chunking = custom `chunk_text()` per Chunking Strategy · Embedding = `all-MiniLM-L6-v2` (`sentence-transformers`) · Vector store + Retrieval = **ChromaDB** local `PersistentClient` · Generation = **Groq** LLM · Interface = Gradio or Streamlit.
+
 ---
 
 ## AI Tool Plan
@@ -128,8 +156,8 @@ This Unofficial Guide covers practical first-year survival knowledge for Univers
      "I'll give Claude my Chunking Strategy section and ask it to implement chunk_text()
      with my specified chunk size and overlap" is a plan. -->
 
-**Milestone 3 — Ingestion and chunking:**
+**Milestone 3 — Ingestion and chunking:** I'll give Claude my **Chunking Strategy** section verbatim and ask it to implement two functions: `load_documents(dir)` that reads each file in `documents/` into `{text, source, url, date}` records, and `chunk_text(text, target=200, max_tokens=256, overlap=40)` that does the structure-aware recursive split I specified (paragraph → sentence → greedy group → split-with-overlap only past the 256 max → merge sub-30-token fragments). Expected output: a function returning a list of chunk dicts carrying the source/url/date metadata. I'll verify by checking that long OU Daily columns split into multiple ~200-token chunks while short Quora/Roomsurf entries each stay a single chunk, and that no chunk exceeds 256 tokens (the MiniLM ceiling).
 
-**Milestone 4 — Embedding and retrieval:**
+**Milestone 4 — Embedding and retrieval:** I'll give Claude my **Retrieval Approach** section plus `chroma_example.py` as a reference and ask it to implement `build_index()` (embed all chunks with `all-MiniLM-L6-v2`, upsert into a ChromaDB `PersistentClient` collection at `./chroma_data` with metadata) and `retrieve(query, k=4)` (embed the query, return the top-4 nearest chunks with their distances and metadata). Expected output: a populated persistent collection and a retrieval function. I'll verify by running my 5 evaluation questions through `retrieve()` and confirming the returned chunks actually contain the expected-answer evidence (e.g. Q4 returns the Lloyd Noble / CART chunk).
 
-**Milestone 5 — Generation and interface:**
+**Milestone 5 — Generation and interface:** I'll give Claude my domain summary, the grounding requirement, and the retrieval output format, and ask it to implement `answer(query)` — assemble the top-k chunks into a context block and call the **Groq** LLM with a system prompt that instructs it to answer *only* from the provided chunks, say "I don't know based on these sources" when they don't cover the question, and cite the `source`/`url` metadata. Then a minimal **Gradio/Streamlit** UI wrapping `answer()`. Expected output: a grounded, source-citing response function plus a runnable interface. I'll verify with an out-of-domain question (e.g. "what's the football schedule?") to confirm it refuses rather than hallucinates, and by checking that in-domain answers cite a real source from my list.
