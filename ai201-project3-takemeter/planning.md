@@ -31,7 +31,7 @@ pre-labeling a batch, and finding patterns in my model's errors after evaluation
 **Goal:** Confirm my label definitions are tight enough to apply consistently *before* I commit
 to annotating 200 examples.
 
-- **Tool:** Claude (Opus 4.8).
+- **Tool:** Claude (Sonnet 4.6).
 - **What I'll give it:** my full label definitions, the example posts for each label, and my
   "hard edge cases" description.
 - **What I'll ask for:** 5–10 synthetic posts that deliberately sit on the boundary between two
@@ -47,7 +47,7 @@ to annotating 200 examples.
 **Decision:** [ Yes — I will pre-label / No — I will hand-label everything ] *(choose one)*
 
 If pre-labeling:
-- **Tool:** Claude (Opus 4.8), given the same label definitions used above.
+- **Tool:** Claude (Sonnet 4.6), given the same label definitions used above.
 - **Process:** the model proposes a label for a batch; I review and correct every example myself.
   The model's label is a suggestion, never the final label.
 - **Tracking for disclosure:** I'll add a `pre_labeled` (true/false) column and an
@@ -62,7 +62,7 @@ judgment.
 **Goal:** Find structure in my model's mistakes before I write up the evaluation, rather than
 eyeballing rows.
 
-- **Tool:** Claude (Opus 4.8).
+- **Tool:** Claude (Sonnet 4.6).
 - **What I'll give it:** the list of wrong predictions — each with the post text, the true label,
   and the predicted label (effectively the off-diagonal cells of my confusion matrix).
 - **What I'll ask for:** patterns in the errors — e.g. which label pair is most often confused,
