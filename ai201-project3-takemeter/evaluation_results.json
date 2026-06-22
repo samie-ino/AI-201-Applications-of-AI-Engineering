@@ -1,1 +1,13 @@
-
+{
+  "baseline_accuracy": 0.9667,
+  "finetuned_accuracy": 0.5667,
+  "improvement": -0.4,
+  "test_set_size": 30,
+  "label_map": {
+    "Gameplay Tip": 0,
+    "Opinion / Discussion": 1,
+    "Question": 2,
+    "Story / Experience": 3
+  },
+  "model": "distilbert-base-uncased"
+}
