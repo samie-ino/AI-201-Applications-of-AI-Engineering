@@ -12,10 +12,9 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# ChromaDB local storage — regenerable from embed.py, don't commit binaries
+# ChromaDB local storage
 chroma_db/
 chroma/
-chroma_data/
 
 # macOS
 .DS_Store
