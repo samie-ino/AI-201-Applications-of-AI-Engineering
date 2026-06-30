@@ -17,23 +17,7 @@ I chose one **cheap, deterministic, structural** signal and one **richer, semant
 signal so they fail in *different* ways. When two independent detectors disagree, that
 disagreement lowers confidence rather than being averaged away.
 
-### Signal 1 — Burstiness (sentence-length variation) — local Python
-
-- **Measures:** the coefficient of variation (CV) of sentence lengths in words —
-  `CV = stdev(sentence_lengths) / mean(sentence_lengths)`.
-- **Why it separates human vs AI:** humans are "bursty" — they mix short punchy
-  sentences with long winding ones, so CV is high. LLMs decode high-probability
-  continuations and tend to produce evenly-paced, uniform sentences, so CV is low.
-- **Output shape:** a float `s1 ∈ [0,1]` = P(AI). Calibration from raw CV:
-  `s1 = clamp(1 - (CV / 0.60), 0, 1)`. So CV ≥ 0.60 → s1 = 0 (very human); CV = 0.30 →
-  s1 = 0.5; CV = 0 → s1 = 1.0 (perfectly uniform → AI-like). `0.60` is the reference
-  CV I'll sanity-check against sample human text in M4 and adjust if needed.
-- **Blind spot:** blind to meaning and register. Formal/templated human writing (lab
-  reports, legal boilerplate, ESL writing with simple uniform sentences) has low CV and
-  is wrongly flagged AI. Unreliable on short text (can't estimate variance from 2
-  sentences). Trivially defeated by deliberately varying sentence length.
-
-### Signal 2 — LLM fluency / perplexity judgment — Groq
+### Signal 1 — LLM fluency / perplexity judgment — Groq *(implemented first, M3)*
 
 - **Measures:** how formulaic and low-surprise the phrasing is (even tone, hedging,
   formulaic transitions like "Moreover," / "In conclusion,", absence of personal voice).
@@ -42,25 +26,44 @@ disagreement lowers confidence rather than being averaged away.
   probability word choices and rough edges.
 - **Output shape:** the Groq prompt asks for a strict JSON object
   `{"ai_likelihood": <int 0-100>, "reason": <short str>}`. I normalize:
-  `s2 = ai_likelihood / 100`. If the call fails or returns unparseable output, `s2` is
-  marked `null` and the combiner falls back to Signal 1 alone (and confidence is
+  `s1 = ai_likelihood / 100`. If the call fails or returns unparseable output, `s1` is
+  marked `null` and the combiner falls back to Signal 2 alone (and confidence is
   capped — see §2).
 - **Blind spot:** a fluent or AI-edited human text reads smoothly and is flagged. The
   judge is itself probabilistic — confidently wrong at times, prompt-gameable, weaker on
   short text and on under-represented domains/languages, and may invent a plausible
   rationale for a wrong score.
+- **Why it's the first signal:** it produces a usable score even on short text, so it
+  gives a clean end-to-end demo in M3 before the structural signal is added in M4.
+
+### Signal 2 — Burstiness (sentence-length variation) — local Python *(added M4)*
+
+- **Measures:** the coefficient of variation (CV) of sentence lengths in words —
+  `CV = stdev(sentence_lengths) / mean(sentence_lengths)`.
+- **Why it separates human vs AI:** humans are "bursty" — they mix short punchy
+  sentences with long winding ones, so CV is high. LLMs decode high-probability
+  continuations and tend to produce evenly-paced, uniform sentences, so CV is low.
+- **Output shape:** a float `s2 ∈ [0,1]` = P(AI). Calibration from raw CV:
+  `s2 = clamp(1 - (CV / 0.60), 0, 1)`. So CV ≥ 0.60 → s2 = 0 (very human); CV = 0.30 →
+  s2 = 0.5; CV = 0 → s2 = 1.0 (perfectly uniform → AI-like). `0.60` is the reference
+  CV I'll sanity-check against sample human text in M4 and adjust if needed.
+- **Blind spot:** blind to meaning and register. Formal/templated human writing (lab
+  reports, legal boilerplate, ESL writing with simple uniform sentences) has low CV and
+  is wrongly flagged AI. Unreliable on short text (can't estimate variance from 2
+  sentences — this is why the M3 demo text uses the LLM signal). Trivially defeated by
+  deliberately varying sentence length.
 
 ### Combining the two signals
 
 ```
-s1, s2 ∈ [0,1]   (P that text is AI; 1 = most AI-like)
+s1 = LLM fluency, s2 = burstiness, both ∈ [0,1]   (P that text is AI; 1 = most AI-like)
 
-combined_score = 0.4 * s1 + 0.6 * s2          # LLM weighted higher (richer signal)
+combined_score = 0.6 * s1 + 0.4 * s2          # LLM weighted higher (richer signal)
 agreement      = 1 - abs(s1 - s2)             # 1 = perfect agreement, 0 = opposite
 confidence     = round(combined distance from 0.5, agreement-adjusted)  # see §2
 ```
 
-If `s2` is `null` (Groq failed): `combined_score = s1`, and the result is forced into
+If `s1` is `null` (Groq failed): `combined_score = s2`, and the result is forced into
 the **Uncertain** band with a note that only one signal was available.
 
 ---
@@ -74,7 +77,7 @@ declare "AI": 0.6 sits inside the Uncertain band (see thresholds), so the system
 to a non-technical user without it sounding like a verdict.
 
 **Calibration (raw → score):** each signal is mapped to `[0,1]` at the signal level
-(Signal 1 via the CV formula in §1; Signal 2 via `/100`). I am not claiming these are
+(Signal 1 via `/100`; Signal 2 via the CV formula in §1). I am not claiming these are
 true probabilities — they are *calibrated bands*, and the thresholds below are where the
 real meaning lives. I will eyeball-calibrate the CV reference and the band edges in M4
 against a handful of clearly-human and clearly-AI samples.
@@ -89,7 +92,7 @@ confidence = clamp( (abs(combined_score - 0.5) * 2) * (0.5 + 0.5 * agreement), 0
 
 So a clear, agreed result (e.g. s1=0.9, s2=0.85) yields high confidence; a split
 decision (s1=0.1, s2=0.9 → combined 0.58) yields *low* confidence even though the score
-isn't near 0.5. Single-signal results (s2 null) have confidence capped at 0.5.
+isn't near 0.5. Single-signal results (one signal `null`) have confidence capped at 0.5.
 
 **Thresholds — three bands, not a binary flip at 0.5:**
 
@@ -98,7 +101,7 @@ isn't near 0.5. Single-signal results (s2 null) have confidence capped at 0.5.
 | `0.00 – 0.35` | **Likely human** | — |
 | `0.35 – 0.65` | **Uncertain** | — |
 | `0.65 – 1.00` | **Likely AI** | — |
-| any | **forced Uncertain** | if `abs(s1 - s2) > 0.40` (signals strongly disagree) **or** `s2 is null` **or** text fails the length gate (§5) |
+| any | **forced Uncertain** | if `abs(s1 - s2) > 0.40` (signals strongly disagree) **or** either signal is `null` **or** text fails the length gate (§5) |
 
 A score of 0.50 and a score of 0.62 both land in Uncertain — there is deliberately no
 single tipping point at 0.5.
@@ -234,22 +237,25 @@ Code-generation tool: **Claude (via Claude Code)**. The runtime LLM inside the a
 Architecture diagram, then verify the output myself before wiring it in.
 
 ### M3 — submission endpoint + first signal
-- **Spec I provide:** §1 Detection signals (esp. Signal 1) + the Architecture diagram +
-  the API surface row for `POST /submit`.
-- **What I ask for:** a Flask app skeleton (`/submit`, `/health`, error handling, the
-  in-memory store + audit log scaffold) and the `burstiness(text) -> float` function
-  implementing the CV formula and `[0,1]` calibration.
-- **How I verify:** call `burstiness()` directly on 4–5 strings (a varied human
-  paragraph, a uniform/templated paragraph, a one-liner) and confirm the scores move in
-  the expected direction *before* wiring it into the endpoint. Then `curl /submit` and
-  confirm the JSON shape and a written audit entry.
+- **Spec I provide:** §1 Detection signals (esp. Signal 1, the Groq LLM signal) + the
+  Architecture diagram + the API surface row for `POST /submit`.
+- **What I ask for:** a Flask app skeleton (`/submit`, `/log`, `/health`, error
+  handling, the in-memory store + structured audit log) and the
+  `llm_fluency(text) -> float | None` function (Groq call returning strict JSON,
+  normalized to `[0,1]`, graceful failure → `None`).
+- **How I verify:** call `llm_fluency()` directly on 4–5 strings (an evocative human
+  paragraph, an obviously-AI paragraph, a one-liner) and confirm the scores move in the
+  expected direction *before* wiring it into the endpoint. Then `curl /submit` and
+  confirm the JSON shape (`content_id`, `attribution`, `confidence`, `label`) and a
+  written audit entry visible via `GET /log`.
 
 ### M4 — second signal + confidence scoring
-- **Spec I provide:** §1 (Signal 2) + §2 Uncertainty representation + the diagram.
-- **What I ask for:** `llm_fluency(text) -> float | None` (Groq call returning strict
-  JSON, normalized to `[0,1]`, with graceful failure → `None`) and the combiner
-  (`combined_score`, `agreement`, `confidence`, the band logic, and the disagreement /
-  single-signal / length-gate overrides).
+- **Spec I provide:** §1 (Signal 2, burstiness) + §2 Uncertainty representation + the
+  diagram.
+- **What I ask for:** the `burstiness(text) -> float` function (CV formula + `[0,1]`
+  calibration + length gate) and the combiner (`combined_score`, `agreement`,
+  `confidence`, the band logic, and the disagreement / single-signal / length-gate
+  overrides).
 - **What I check:** scores vary meaningfully between clearly-AI and clearly-human text;
   the disagreement override actually fires when I feed it split inputs; confidence drops
   on disagreement; the CV reference and band edges look calibrated (adjust if not).
