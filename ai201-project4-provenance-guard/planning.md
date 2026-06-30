@@ -1,209 +1,274 @@
-# Provenance Guard — Planning
+# Provenance Guard — Planning & Spec
 
-## Milestone 1: System Understanding & Architecture
+Provenance Guard accepts a piece of text, runs it through two independent detection
+signals, blends them into a single calibrated AI-likelihood score, and returns a
+**transparency label** that is always probabilistic, always shows its work, and is
+always contestable through an appeals flow. This document is the spec all code is built
+against, and the source I hand (section by section) to AI tools in Milestones 3–5.
 
----
-
-## 1. Architecture Narrative — the path one piece of text takes
-
-A creator pastes a block of text and submits it. Here is the full journey of that
-text, naming every component it touches and what each one does.
-
-1. **Client → `POST /submit`.** The creator sends raw text (and optionally an author
-   id) to the submission endpoint. The **rate limiter** (flask-limiter) checks first
-   that this client hasn't exceeded its request budget; if it has, the request is
-   rejected before any work happens. The endpoint then validates the input (non-empty,
-   long enough to analyze) and mints a unique **submission id**.
-
-2. **Raw text → Signal 1 (Burstiness analyzer).** The text is passed to the first
-   detector, a pure-Python statistical function. It splits the text into sentences,
-   measures the variation in sentence length, and returns a normalized score in
-   `[0,1]` representing *how AI-like the structural rhythm is*. No network call.
-
-3. **Raw text → Signal 2 (LLM fluency judge, via Groq).** The same text is sent to the
-   Groq API with a structured prompt asking the model to rate how formulaic / low-
-   surprise / "machine-smooth" the prose reads. The model returns a score that I
-   normalize to `[0,1]` representing *how AI-like the phrasing is*.
-
-4. **Two signal scores → Confidence scorer.** A combiner takes both normalized scores
-   and produces (a) a single **combined AI-likelihood score** and (b) a **confidence**
-   value. Crucially, confidence is reduced when the two signals *disagree* — two
-   independent detectors pointing in opposite directions is exactly the situation where
-   the system should admit it is unsure.
-
-5. **Combined score + confidence → Transparency label.** The label builder maps the
-   numbers onto a human-readable verdict band ("Likely human-written", "Likely
-   AI-generated", or "Uncertain / mixed signals") and attaches a plain-English
-   explanation, the per-signal breakdown, and the score. It never emits a bare
-   accusation — the output is always probabilistic and shows its work.
-
-6. **Everything → Audit log.** Before responding, the system appends an immutable
-   record: submission id, a hash of the text (not the raw text), both signal scores,
-   the combined score, the label, and a timestamp. This is the accountability trail.
-
-7. **Audit record → Response.** The endpoint returns the submission id, both signal
-   scores, the combined score, the label, and the explanation to the creator.
-
-If the creator believes the label is wrong, a second flow begins:
-
-8. **Client → `POST /appeal`.** The creator sends the submission id and a reason. The
-   system looks up the original record, sets its **status** to `appealed / under
-   review`, writes a new **audit log** entry capturing the status change, and returns
-   the appeal id and new status. A human reviewer can later override the label, and
-   that override is itself logged.
+Stack: Flask + flask-limiter (rate limiting) + Groq (LLM signal). Storage for the
+prototype is in-memory; the audit log is append-only.
 
 ---
 
-## 2. The two detection signals
+## 1. Detection signals
 
-I deliberately chose one **cheap, deterministic, structural** signal and one
-**richer, semantic** signal so they fail in *different* ways. Their disagreement is
-information, not noise.
+I chose one **cheap, deterministic, structural** signal and one **richer, semantic**
+signal so they fail in *different* ways. When two independent detectors disagree, that
+disagreement lowers confidence rather than being averaged away.
 
-### Signal 1 — Burstiness (sentence-length variation)
+### Signal 1 — Burstiness (sentence-length variation) — local Python
 
-- **What it measures:** the spread (standard deviation, normalized by the mean) of
-  sentence lengths across the text — i.e. how much the rhythm varies.
-- **Why it differs between human and AI:** human writing is "bursty." People mix a
-  short, punchy sentence with a long winding one because emphasis and thought are
-  uneven. LLMs decode by picking high-probability continuations, which tends to
-  produce evenly-paced, medium-length, structurally uniform sentences. **Low
-  burstiness → more AI-like.**
-- **What it can't capture (blind spot):** it is blind to *meaning* and to register.
-  A human writing in a rigid format — a lab report, legal boilerplate, a student
-  following a strict template — also produces uniform sentence lengths and will be
-  flagged as AI (a false positive). It is also unreliable on short text (you can't
-  estimate variance from two sentences), and a person can trivially defeat it by
-  varying sentence length on purpose.
+- **Measures:** the coefficient of variation (CV) of sentence lengths in words —
+  `CV = stdev(sentence_lengths) / mean(sentence_lengths)`.
+- **Why it separates human vs AI:** humans are "bursty" — they mix short punchy
+  sentences with long winding ones, so CV is high. LLMs decode high-probability
+  continuations and tend to produce evenly-paced, uniform sentences, so CV is low.
+- **Output shape:** a float `s1 ∈ [0,1]` = P(AI). Calibration from raw CV:
+  `s1 = clamp(1 - (CV / 0.60), 0, 1)`. So CV ≥ 0.60 → s1 = 0 (very human); CV = 0.30 →
+  s1 = 0.5; CV = 0 → s1 = 1.0 (perfectly uniform → AI-like). `0.60` is the reference
+  CV I'll sanity-check against sample human text in M4 and adjust if needed.
+- **Blind spot:** blind to meaning and register. Formal/templated human writing (lab
+  reports, legal boilerplate, ESL writing with simple uniform sentences) has low CV and
+  is wrongly flagged AI. Unreliable on short text (can't estimate variance from 2
+  sentences). Trivially defeated by deliberately varying sentence length.
 
-### Signal 2 — LLM fluency / perplexity judgment (Groq)
+### Signal 2 — LLM fluency / perplexity judgment — Groq
 
-- **What it measures:** how formulaic and low-surprise the phrasing is — whether the
-  text reads like high-likelihood generated prose (even tone, hedging, formulaic
-  transitions like "Moreover," / "In conclusion,", absence of idiosyncratic voice).
-- **Why it differs between human and AI:** AI text is sampled from high-probability
-  tokens, so it is unusually smooth and "low-perplexity." Human text carries more
-  surprising, lower-probability word choices, personal voice, and the occasional typo
-  or rough edge. **Smoother / more predictable → more AI-like.**
-- **What it can't capture (blind spot):** a genuinely fluent human writer, or any text
-  that has been edited/polished, also reads smoothly and gets flagged (false positive).
-  The judge is itself a probabilistic model — it can be confidently wrong, can be
-  prompt-gamed, performs worse on short text and on domains/languages it saw little of,
-  and may invent a plausible-sounding rationale for a wrong score.
+- **Measures:** how formulaic and low-surprise the phrasing is (even tone, hedging,
+  formulaic transitions like "Moreover," / "In conclusion,", absence of personal voice).
+- **Why it separates human vs AI:** AI samples high-probability tokens → unusually
+  smooth, low-perplexity prose. Humans use more surprising, idiosyncratic, lower-
+  probability word choices and rough edges.
+- **Output shape:** the Groq prompt asks for a strict JSON object
+  `{"ai_likelihood": <int 0-100>, "reason": <short str>}`. I normalize:
+  `s2 = ai_likelihood / 100`. If the call fails or returns unparseable output, `s2` is
+  marked `null` and the combiner falls back to Signal 1 alone (and confidence is
+  capped — see §2).
+- **Blind spot:** a fluent or AI-edited human text reads smoothly and is flagged. The
+  judge is itself probabilistic — confidently wrong at times, prompt-gameable, weaker on
+  short text and on under-represented domains/languages, and may invent a plausible
+  rationale for a wrong score.
 
-**Why these two together:** burstiness is structural and free but shallow; the LLM
-judge is semantic and deep but expensive and fallible. They share *almost no* failure
-mode except "polished formal human writing," which is precisely the case I design the
-confidence score and appeal flow to protect.
+### Combining the two signals
 
----
+```
+s1, s2 ∈ [0,1]   (P that text is AI; 1 = most AI-like)
 
-## 3. The false-positive problem (traced through the system)
+combined_score = 0.4 * s1 + 0.6 * s2          # LLM weighted higher (richer signal)
+agreement      = 1 - abs(s1 - s2)             # 1 = perfect agreement, 0 = opposite
+confidence     = round(combined distance from 0.5, agreement-adjusted)  # see §2
+```
 
-**Scenario:** A meticulous human writes a polished, formal cover letter. Its sentences
-are uniform in length (→ Signal 1 scores it AI-like) and its prose is smooth and well-
-edited (→ Signal 2 scores it AI-like). Both signals agree, and *both are wrong.*
-
-Tracing it through:
-
-- **Confidence score:** here the danger is real — because both signals agree, the
-  disagreement-penalty does *not* fire, so confidence stays high. My system does not
-  pretend this away. Instead the protection is structural, not numerical: the label is
-  always phrased as a probability ("**Likely** AI-generated, score 0.81"), never as a
-  verdict ("This is AI"), and it always shows the two signal scores and the caveat that
-  *formal, polished human writing is the known failure mode of both signals.* A reader
-  is given the means to doubt the label.
-- **The label the user sees:** "Likely AI-generated (0.81). Note: short, formal, or
-  heavily-edited human writing can score this way. If this is your original work, you
-  can appeal." Transparency turns a silent misjudgment into a contestable one.
-- **How the creator appeals:** they call `POST /appeal` with the submission id and a
-  reason. The record's status flips to `under review`, the change is written to the
-  audit log, and a human can override the label — with the override also logged.
-
-**What this teaches Milestone 2:** (1) never present detection as ground truth — always
-expose the score and per-signal breakdown; (2) bias the decision threshold so the system
-is reluctant to flag a human (favor false negatives over false positives, because
-falsely accusing a real creator is the higher-harm error); (3) make the appeal path
-frictionless and fully audited.
+If `s2` is `null` (Groq failed): `combined_score = s1`, and the result is forced into
+the **Uncertain** band with a note that only one signal was available.
 
 ---
 
-## 4. API surface (the contract)
+## 2. Uncertainty representation
 
-| Method & path | Accepts | Returns |
+**What `combined_score = 0.6` means to the system:** it is the blended probability that
+the text is AI-generated — a 60% lean toward AI. By itself that is *not enough* to
+declare "AI": 0.6 sits inside the Uncertain band (see thresholds), so the system reports
+"leaning AI, but inconclusive." This is exactly the number I need to be able to explain
+to a non-technical user without it sounding like a verdict.
+
+**Calibration (raw → score):** each signal is mapped to `[0,1]` at the signal level
+(Signal 1 via the CV formula in §1; Signal 2 via `/100`). I am not claiming these are
+true probabilities — they are *calibrated bands*, and the thresholds below are where the
+real meaning lives. I will eyeball-calibrate the CV reference and the band edges in M4
+against a handful of clearly-human and clearly-AI samples.
+
+**Confidence (separate from the AI-likelihood score):** confidence answers "how much
+should you trust this label," and is driven by two things — how far the combined score
+is from the 0.5 coin-flip, and how much the two signals agree:
+
+```
+confidence = clamp( (abs(combined_score - 0.5) * 2) * (0.5 + 0.5 * agreement), 0, 1 )
+```
+
+So a clear, agreed result (e.g. s1=0.9, s2=0.85) yields high confidence; a split
+decision (s1=0.1, s2=0.9 → combined 0.58) yields *low* confidence even though the score
+isn't near 0.5. Single-signal results (s2 null) have confidence capped at 0.5.
+
+**Thresholds — three bands, not a binary flip at 0.5:**
+
+| combined_score | Band | Override |
 |---|---|---|
-| `POST /submit` | `{ "text": str, "author"?: str }` | `{ id, signals: { burstiness, llm_fluency }, combined_score, confidence, label, explanation, timestamp }` |
-| `GET /result/<id>` | path param `id` | the stored result for that submission (same shape as `/submit`) + current `status` |
-| `POST /appeal` | `{ "submission_id": str, "reason": str, "author"?: str }` | `{ appeal_id, submission_id, status, timestamp }` |
-| `GET /audit` | optional `?submission_id=` filter | append-only list of audit entries (submissions, labels, appeals, overrides) |
-| `GET /health` | — | `{ status: "ok" }` |
+| `0.00 – 0.35` | **Likely human** | — |
+| `0.35 – 0.65` | **Uncertain** | — |
+| `0.65 – 1.00` | **Likely AI** | — |
+| any | **forced Uncertain** | if `abs(s1 - s2) > 0.40` (signals strongly disagree) **or** `s2 is null` **or** text fails the length gate (§5) |
 
-Notes on the contract:
-- `combined_score` and each signal are floats in `[0,1]` (1 = most AI-like).
-- `label` is one of `likely_human`, `uncertain`, `likely_ai`.
-- Rate limiting (flask-limiter) applies to `POST /submit` and `POST /appeal`.
-- Errors return a JSON body `{ error, detail }` with the appropriate 4xx/5xx status
-  (e.g. 400 empty/too-short text, 404 unknown submission id, 429 rate-limited).
-- The audit log stores a **hash** of the text, never the raw text.
+A score of 0.50 and a score of 0.62 both land in Uncertain — there is deliberately no
+single tipping point at 0.5.
 
 ---
 
-## 5. Flow diagrams
+## 3. Transparency label design (exact text)
 
-### Flow 1 — Submission
+Every label includes the band verdict, the AI-likelihood score, the confidence, the
+per-signal breakdown, and an appeal pointer. Three variants, written out now:
 
-```mermaid
-flowchart LR
-    C[Client] -->|raw text| S[POST /submit]
-    S -->|raw text| S1[Signal 1: Burstiness]
-    S -->|raw text| S2[Signal 2: LLM fluency - Groq]
-    S1 -->|score 0..1| CS[Confidence scorer]
-    S2 -->|score 0..1| CS
-    CS -->|combined score + confidence| L[Transparency label builder]
-    L -->|label text + explanation| A[(Audit log)]
-    A -->|stored record| R[Response to client]
-```
+**High-confidence AI** (combined ≥ 0.65, signals agree):
+> ⚠️ **Likely AI-generated.** AI-likelihood **0.82** · confidence **0.86**.
+> Both checks agreed: the writing rhythm was unusually uniform (burstiness 0.80) and the
+> phrasing read as formulaic (LLM 0.83). This is an automated estimate, **not proof**. If
+> you wrote this yourself, you can appeal below.
 
-Arrow contents: `raw text` → both signals; each signal returns a `normalized score
-0..1`; the scorer emits `combined score + confidence`; the label builder emits
-`label text + explanation`; the audit log persists the full `record`; the response
-carries `id + scores + label + explanation` back to the client.
+**High-confidence human** (combined ≤ 0.35, signals agree):
+> ✅ **Likely human-written.** AI-likelihood **0.14** · confidence **0.88**.
+> Both checks agreed: natural sentence-length variation (burstiness 0.12) and
+> idiosyncratic phrasing (LLM 0.15). This is an automated estimate, **not a guarantee**
+> of authorship.
 
-### Flow 2 — Appeal
+**Uncertain** (0.35–0.65, or signals disagree, or single-signal, or too short):
+> ❓ **Uncertain — inconclusive.** AI-likelihood **0.58** · confidence **0.41**.
+> Our two checks disagreed (burstiness 0.20 vs LLM 0.90) / landed in the middle, so we
+> can't make a reliable call. Treat this as **inconclusive** — do not use it as evidence
+> either way.
 
-```mermaid
-flowchart LR
-    C[Client] -->|submission_id + reason| AP[POST /appeal]
-    AP -->|lookup id| ST[Status update: under review]
-    ST -->|status change| A[(Audit log)]
-    A -->|appeal record| R[Response to client]
-```
+---
 
-Arrow contents: client sends `submission_id + reason`; the endpoint performs a
-`lookup` and a `status update`; the `status change` is appended to the audit log; the
-response carries `appeal_id + new status` back to the client.
+## 4. Appeals workflow
 
-### ASCII fallback
+- **Who can appeal:** anyone holding a `submission_id` — in practice the creator who
+  submitted the text. No login in the prototype; the submission id is the access token.
+- **What they provide:** `{ submission_id, reason, author? }`. `reason` is required.
+- **What the system does on receipt:**
+  1. Look up the submission. Unknown id → `404`.
+  2. If already under review or resolved → return current status (idempotent), no
+     duplicate.
+  3. Otherwise create an appeal record `{ appeal_id, submission_id, reason, status:
+     "under_review", created_at }` and flip the submission's `status` from `labeled` →
+     `under_review`.
+  4. Append an audit entry `appeal_opened` (appeal id, submission id, timestamp, reason).
+  5. Return `{ appeal_id, submission_id, status, timestamp }`.
+- **Human reviewer — the appeal queue** (`GET /appeals`): each row shows submission id,
+  appeal id, the original label + AI-likelihood + confidence, **both signal scores**, the
+  appellant's reason, text hash, status, and timestamps. The reviewer can resolve via
+  `POST /appeal/<appeal_id>/resolve { decision: "upheld" | "overturned", note }`, which
+  sets status to `resolved_upheld` / `resolved_overturned` and logs an `appeal_resolved`
+  audit entry. An overturn records a corrected label but never deletes the original — the
+  audit trail keeps both.
+
+---
+
+## 5. Anticipated edge cases (specific)
+
+1. **Poetry / song lyrics with heavy repetition and short uniform lines.** Repeated
+   refrains and consistently short lines drive sentence-length CV toward zero, so Signal 1
+   scores it strongly AI even though it is human and creative. Mitigation: the
+   disagreement override (the LLM judge often disagrees) pushes these to Uncertain rather
+   than a false AI verdict.
+2. **Non-native / ESL writing.** Simpler, more uniform sentence construction lowers CV
+   *and* can read as "formulaic" to the LLM judge, so **both** signals can wrongly agree
+   on AI — the highest-harm false positive. Mitigation: this is exactly why labels are
+   probabilistic and appeals are frictionless; I also bias the threshold high (0.65) so
+   the system is reluctant to flag a human.
+3. **Very short text (a tweet, one sentence).** Variance is unestimable and the LLM judge
+   is unreliable on short input. **Length gate:** inputs under ~40 words or fewer than 3
+   sentences skip scoring and return Uncertain with an "insufficient text to analyze"
+   note rather than a guessed verdict.
+4. **Mixed provenance** (human draft polished by AI, or AI draft heavily rewritten by a
+   human). The binary human/AI framing genuinely can't represent this; the Uncertain band
+   and the per-signal breakdown are the honest answer, not a forced call.
+
+---
+
+## Architecture
+
+**Submission flow:** a creator `POST`s raw text to `/submit`; the rate limiter and a
+length gate run first, then the text fans out to Signal 1 (burstiness, local) and Signal
+2 (LLM fluency, Groq); the confidence scorer blends the two scores into a combined
+AI-likelihood and a confidence value; the label builder maps those onto one of three
+transparency labels; the full record (text **hash**, both signals, combined score, label,
+timestamp) is appended to the audit log and returned to the client.
+**Appeal flow:** the creator `POST`s the `submission_id` + reason to `/appeal`; the
+system looks up the record, flips its status to `under_review`, writes an audit entry, and
+returns the appeal id and new status for a human reviewer to action.
+
+### Diagram
 
 ```
 SUBMIT:
-  client --text--> /submit --text--> [Signal 1 burstiness] --0..1--\
-                              \--text--> [Signal 2 LLM/Groq] --0..1--> [confidence scorer]
-                                                                          |
-                                            combined score + confidence  v
-                                                              [transparency label]
-                                                                          | label+explanation
-                                                                          v
-                                                                    [audit log] --record--> response
+  client --text--> /submit --(rate limit + length gate)--> text
+        text --> [Signal 1: burstiness] -----0..1----\
+        text --> [Signal 2: LLM / Groq]  ----0..1----> [confidence scorer]
+                                                            |
+                                       combined score + confidence
+                                                            v
+                                                 [transparency label builder]
+                                                            | label + explanation
+                                                            v
+                                                      [audit log] --record--> response
 
 APPEAL:
-  client --id+reason--> /appeal --lookup--> [status: under review] --change--> [audit log] --> response
+  client --submission_id + reason--> /appeal --lookup--> [status: under_review]
+                                            --status change--> [audit log] --> response
 ```
+
+### API surface
+
+| Method & path | Accepts | Returns |
+|---|---|---|
+| `POST /submit` | `{ text, author? }` | `{ id, signals:{ burstiness, llm_fluency }, combined_score, confidence, label, explanation, status, timestamp }` |
+| `GET /result/<id>` | path `id` | stored result + current `status` |
+| `POST /appeal` | `{ submission_id, reason, author? }` | `{ appeal_id, submission_id, status, timestamp }` |
+| `GET /appeals` | — | appeal queue for human reviewers |
+| `POST /appeal/<appeal_id>/resolve` | `{ decision, note }` | updated appeal record |
+| `GET /audit` | optional `?submission_id=` | append-only audit entries |
+| `GET /health` | — | `{ status: "ok" }` |
+
+Conventions: scores are floats in `[0,1]` (1 = most AI-like); `label` ∈
+`{likely_human, uncertain, likely_ai}`; errors return `{ error, detail }` with 400 /
+404 / 429; the audit log stores a hash of the text, never the raw text; rate limiting
+applies to `POST /submit` and `POST /appeal`.
 
 ---
 
-## Open decisions to confirm before Milestone 2
-- Exact band thresholds for `likely_human` / `uncertain` / `likely_ai`.
-- The disagreement penalty formula for confidence.
-- Storage backend for the audit log (in-memory dict for the prototype vs. a JSON file
-  for persistence across restarts).
+## AI Tool Plan
+
+Code-generation tool: **Claude (via Claude Code)**. The runtime LLM inside the app is
+**Groq** (Signal 2). For each milestone I give Claude the named spec sections plus the
+Architecture diagram, then verify the output myself before wiring it in.
+
+### M3 — submission endpoint + first signal
+- **Spec I provide:** §1 Detection signals (esp. Signal 1) + the Architecture diagram +
+  the API surface row for `POST /submit`.
+- **What I ask for:** a Flask app skeleton (`/submit`, `/health`, error handling, the
+  in-memory store + audit log scaffold) and the `burstiness(text) -> float` function
+  implementing the CV formula and `[0,1]` calibration.
+- **How I verify:** call `burstiness()` directly on 4–5 strings (a varied human
+  paragraph, a uniform/templated paragraph, a one-liner) and confirm the scores move in
+  the expected direction *before* wiring it into the endpoint. Then `curl /submit` and
+  confirm the JSON shape and a written audit entry.
+
+### M4 — second signal + confidence scoring
+- **Spec I provide:** §1 (Signal 2) + §2 Uncertainty representation + the diagram.
+- **What I ask for:** `llm_fluency(text) -> float | None` (Groq call returning strict
+  JSON, normalized to `[0,1]`, with graceful failure → `None`) and the combiner
+  (`combined_score`, `agreement`, `confidence`, the band logic, and the disagreement /
+  single-signal / length-gate overrides).
+- **What I check:** scores vary meaningfully between clearly-AI and clearly-human text;
+  the disagreement override actually fires when I feed it split inputs; confidence drops
+  on disagreement; the CV reference and band edges look calibrated (adjust if not).
+
+### M5 — production layer (labels + appeals)
+- **Spec I provide:** §3 Label variants + §4 Appeals workflow + the diagram.
+- **What I ask for:** the label builder (maps band + scores → one of the three exact
+  label texts with the signal breakdown filled in) and the `/appeal`, `/appeals`,
+  `/appeal/<id>/resolve`, `/audit` endpoints with their status transitions and audit
+  logging.
+- **How I verify:** craft inputs that reach **all three** label variants (human,
+  uncertain, AI); submit one, appeal it, and confirm status goes `labeled →
+  under_review`, an `appeal_opened` audit entry is written, the appeal appears in
+  `GET /appeals`, and a resolve call transitions status correctly.
+
+---
+
+## Open decisions to confirm during build
+- Final CV reference (`0.60`) and band edges (`0.35` / `0.65`) after M4 calibration.
+- Signal weights (`0.4` / `0.6`) — revisit if the LLM signal proves noisy.
+- Audit-log persistence: in-memory dict for the prototype vs. a JSON file for surviving
+  restarts.
