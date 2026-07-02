@@ -1,12 +1,11 @@
 """Provenance Guard — Flask app.
 
-Milestone 3 scope:
-  POST /submit  -> run Signal 1 (Groq LLM fluency), store result + audit entry, respond
+Scope so far:
+  POST /submit  -> run both signals + combiner, store result + audit entry, respond
   GET  /log     -> recent audit-log entries (for transparency / grading visibility)
   GET  /health  -> liveness check
 
-Confidence and label here are provisional (single-signal). The real multi-signal
-combiner and the three transparency-label variants arrive in M4 / M5.
+The three full transparency-label variants arrive in M5; label text here is provisional.
 """
 
 import datetime
@@ -27,9 +26,9 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
 # Provisional, human-readable label text per band (full M5 variants come later).
 _LABEL_TEXT = {
-    "likely_human": "Likely human-written (provisional, single signal).",
-    "uncertain": "Uncertain — inconclusive (provisional, single signal).",
-    "likely_ai": "Likely AI-generated (provisional, single signal).",
+    "likely_human": "Likely human-written (provisional label).",
+    "uncertain": "Uncertain — inconclusive (provisional label).",
+    "likely_ai": "Likely AI-generated (provisional label).",
 }
 
 
@@ -56,19 +55,9 @@ def submit():
     content_id = str(uuid.uuid4())
     timestamp = _now()
 
-    signal1 = detector.llm_fluency(text)
-    if signal1 is None:
-        # Signal unavailable -> Uncertain, zero confidence (planning.md §2 fallback).
-        llm_score = None
-        attribution = "uncertain"
-        confidence = 0.0
-        llm_reason = "LLM signal unavailable."
-    else:
-        llm_score = round(signal1["score"], 3)
-        attribution = detector.attribution_from_score(llm_score)
-        # Provisional single-signal confidence, capped at 0.5 until the M4 combiner.
-        confidence = round(min(0.5, abs(llm_score - 0.5) * 2), 3)
-        llm_reason = signal1["reason"]
+    # Run both signals + the confidence combiner (planning.md §1/§2).
+    result = detector.analyze(text)
+    attribution = result["attribution"]
 
     record = {
         "content_id": content_id,
@@ -76,23 +65,29 @@ def submit():
         "timestamp": timestamp,
         "text_hash": store.hash_text(text),
         "attribution": attribution,
-        "confidence": confidence,
-        "llm_score": llm_score,
-        "llm_reason": llm_reason,
+        "confidence": result["confidence"],
+        "combined_score": result["combined_score"],
+        "llm_score": result["llm_score"],
+        "burstiness_score": result["burstiness_score"],
+        "agreement": result["agreement"],
+        "flags": result["flags"],
+        "llm_reason": result["llm_reason"],
         "label": _LABEL_TEXT[attribution],
         "status": "classified",
     }
     store.save_submission(record)
 
-    # Structured audit entry (planning.md: hash, not raw text).
+    # Structured audit entry — now captures BOTH signals + the combined score.
     store.append_audit(
         {
             "content_id": content_id,
             "creator_id": creator_id,
             "timestamp": timestamp,
             "attribution": attribution,
-            "confidence": confidence,
-            "llm_score": llm_score,
+            "confidence": result["confidence"],
+            "combined_score": result["combined_score"],
+            "llm_score": result["llm_score"],
+            "burstiness_score": result["burstiness_score"],
             "status": "classified",
         }
     )
@@ -104,10 +99,16 @@ def submit():
                 "creator_id": creator_id,
                 "timestamp": timestamp,
                 "attribution": attribution,
-                "confidence": confidence,
+                "confidence": result["confidence"],
+                "combined_score": result["combined_score"],
                 "label": _LABEL_TEXT[attribution],
-                "signals": {"llm_fluency": llm_score},
-                "llm_reason": llm_reason,
+                "signals": {
+                    "llm_fluency": result["llm_score"],
+                    "burstiness": result["burstiness_score"],
+                },
+                "agreement": result["agreement"],
+                "flags": result["flags"],
+                "llm_reason": result["llm_reason"],
                 "status": "classified",
             }
         ),

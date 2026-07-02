@@ -1,16 +1,31 @@
-"""Detection signals for Provenance Guard.
+"""Detection signals and confidence scoring for Provenance Guard.
 
-Milestone 3 implements Signal 1 only: an LLM "fluency / perplexity" judge backed by
-Groq. Signal 2 (burstiness) and the multi-signal combiner arrive in Milestone 4.
+Signal 1 (llm_fluency): an LLM "fluency / perplexity" judge backed by Groq.
+Signal 2 (burstiness):  sentence-length variation, computed locally.
+combine():              blends the two into a calibrated score + confidence + band.
+analyze():              runs both signals and returns the full result dict.
+
+All numeric contracts follow planning.md §1 and §2.
 """
 
 import json
 import os
+import re
+import statistics
 
 from groq import Groq
 
-# Groq production model with JSON-mode support.
-_MODEL = "llama-3.3-70b-versatile"
+# --- configuration (planning.md §1/§2) ---------------------------------------
+_MODEL = "llama-3.3-70b-versatile"     # Groq production model with JSON mode
+CV_REF = 0.60                          # burstiness reference coefficient of variation
+W_LLM = 0.6                            # combiner weight for Signal 1 (LLM)
+W_BURST = 0.4                          # combiner weight for Signal 2 (burstiness)
+HUMAN_MAX = 0.35                       # < this -> likely_human
+AI_MIN = 0.65                          # >= this -> likely_ai
+DISAGREE_THRESHOLD = 0.40             # |s1 - s2| above this -> forced Uncertain
+MIN_SENTENCES = 2                      # burstiness length gate
+MIN_WORDS = 25                         # burstiness length gate
+
 _client = None
 
 _SYSTEM_PROMPT = """You are an AI-text detector. Judge how likely the user's text was \
@@ -25,9 +40,9 @@ Respond with ONLY a JSON object of the form:
 where 0 means almost certainly human and 100 means almost certainly AI. Do not include \
 any text outside the JSON object."""
 
-# Band thresholds (see planning.md §2). Shared so the combiner can reuse them in M4.
-HUMAN_MAX = 0.35
-AI_MIN = 0.65
+
+def _clamp(x, lo=0.0, hi=1.0):
+    return max(lo, min(hi, x))
 
 
 def _get_client():
@@ -40,13 +55,10 @@ def _get_client():
     return _client
 
 
-def llm_fluency(text):
-    """Signal 1: ask Groq to rate AI-likelihood.
+# --- Signal 1: LLM fluency (Groq) --------------------------------------------
 
-    Returns a dict {"score": float in [0,1], "reason": str} where score is P(AI),
-    or None if the call fails or the response can't be parsed (the caller treats a
-    None as "signal unavailable" and falls back to Uncertain).
-    """
+def llm_fluency(text):
+    """Return {"score": float in [0,1], "reason": str} = P(AI), or None on failure."""
     try:
         client = _get_client()
         resp = client.chat.completions.create(
@@ -59,12 +71,33 @@ def llm_fluency(text):
             ],
         )
         data = json.loads(resp.choices[0].message.content)
-        score = max(0.0, min(1.0, float(data["ai_likelihood"]) / 100.0))
-        reason = str(data.get("reason", "")).strip()
-        return {"score": score, "reason": reason}
+        score = _clamp(float(data["ai_likelihood"]) / 100.0)
+        return {"score": score, "reason": str(data.get("reason", "")).strip()}
     except Exception as exc:  # network error, bad JSON, missing key, etc.
         print(f"[detector] llm_fluency failed: {exc}")
         return None
+
+
+# --- Signal 2: burstiness (local) --------------------------------------------
+
+def _split_sentences(text):
+    parts = re.split(r"[.!?]+", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def burstiness(text):
+    """Return P(AI) in [0,1] from sentence-length variation, or None if the text is
+    too short to estimate variance (length gate, planning.md §5)."""
+    sentences = _split_sentences(text)
+    lengths = [len(s.split()) for s in sentences]
+    total_words = sum(lengths)
+    if len(sentences) < MIN_SENTENCES or total_words < MIN_WORDS:
+        return None
+    mean = statistics.mean(lengths)
+    if mean == 0:
+        return None
+    cv = statistics.pstdev(lengths) / mean          # coefficient of variation
+    return _clamp(1.0 - (cv / CV_REF))              # low variation -> AI-like
 
 
 def attribution_from_score(score):
@@ -76,30 +109,117 @@ def attribution_from_score(score):
     return "likely_ai"
 
 
+# --- confidence scoring / combiner (planning.md §2) --------------------------
+
+def combine(s1, s2):
+    """Blend Signal 1 (s1, LLM) and Signal 2 (s2, burstiness); either may be None.
+
+    Returns a dict with combined_score, confidence, attribution, agreement, and the
+    override flags that explain a forced-Uncertain result.
+    """
+    both = s1 is not None and s2 is not None
+    flags = []
+
+    if both:
+        combined = W_LLM * s1 + W_BURST * s2
+        agreement = 1.0 - abs(s1 - s2)
+        disagree = abs(s1 - s2) > DISAGREE_THRESHOLD
+    elif s1 is not None:
+        combined, agreement, disagree = s1, None, False
+        flags.append("single_signal_llm_only")
+    elif s2 is not None:
+        combined, agreement, disagree = s2, None, False
+        flags.append("single_signal_burstiness_only")
+    else:
+        return {
+            "combined_score": None,
+            "confidence": 0.0,
+            "attribution": "uncertain",
+            "agreement": None,
+            "forced_uncertain": True,
+            "flags": ["no_signals_available"],
+        }
+
+    attribution = attribution_from_score(combined)
+
+    forced = not both
+    if disagree:
+        forced = True
+        flags.append("signals_disagree")
+    if forced:
+        attribution = "uncertain"
+
+    if both:
+        # far from a coin flip AND signals agree -> high confidence
+        confidence = (abs(combined - 0.5) * 2) * (0.5 + 0.5 * agreement)
+    else:
+        # single signal is capped at 0.5 confidence (planning.md §2)
+        confidence = min(0.5, abs(combined - 0.5) * 2)
+
+    return {
+        "combined_score": round(combined, 3),
+        "confidence": round(_clamp(confidence), 3),
+        "attribution": attribution,
+        "agreement": round(agreement, 3) if agreement is not None else None,
+        "forced_uncertain": forced,
+        "flags": flags,
+    }
+
+
+def analyze(text):
+    """Run both signals + combiner. Returns the full result dict for the endpoint."""
+    sig1 = llm_fluency(text)
+    s1 = sig1["score"] if sig1 else None
+    s2 = burstiness(text)
+
+    result = combine(s1, s2)
+    result["llm_score"] = round(s1, 3) if s1 is not None else None
+    result["burstiness_score"] = round(s2, 3) if s2 is not None else None
+    result["llm_reason"] = sig1["reason"] if sig1 else "LLM signal unavailable."
+    return result
+
+
 if __name__ == "__main__":
-    # Quick standalone test (Milestone 3 step: test the signal before wiring it in).
+    # Milestone 4 step: test 4 deliberately-chosen inputs, printing BOTH signals.
     from dotenv import load_dotenv
 
     load_dotenv()
-    samples = {
-        "evocative human": (
-            "The sun dipped below the horizon, painting the sky in hues of amber and "
-            "rose. I sat on the porch, coffee in hand, watching the neighborhood slowly "
-            "go quiet."
+    cases = {
+        "clearly AI": (
+            "Artificial intelligence represents a transformative paradigm shift in "
+            "modern society. It is important to note that while the benefits of AI are "
+            "numerous, it is equally essential to consider the ethical implications. "
+            "Furthermore, stakeholders across various sectors must collaborate to ensure "
+            "responsible deployment."
         ),
-        "formulaic AI-ish": (
-            "There are several key benefits to regular exercise. First, it improves "
-            "cardiovascular health. Second, it enhances mental well-being. In conclusion, "
-            "incorporating exercise into your routine is highly recommended."
+        "clearly human": (
+            "ok so i finally tried that new ramen place downtown and honestly? "
+            "underwhelming. the broth was fine but they put WAY too much sodium in it "
+            "and i was thirsty for like three hours after. my friend got the spicy "
+            "version and said it was better. probably won't go back unless someone drags "
+            "me there"
         ),
-        "one-liner": "ok sounds good lol",
+        "borderline: formal human": (
+            "The relationship between monetary policy and asset price inflation has been "
+            "extensively studied in the literature. Central banks face a fundamental "
+            "tension between their mandate for price stability and the unintended "
+            "consequences of prolonged low interest rates on equity and real estate "
+            "valuations."
+        ),
+        "borderline: lightly edited AI": (
+            "I've been thinking a lot about remote work lately. There are genuine "
+            "tradeoffs — flexibility and no commute on one side, isolation and blurred "
+            "work-life boundaries on the other. Studies show productivity varies widely "
+            "by individual and role type."
+        ),
     }
-    for name, txt in samples.items():
-        result = llm_fluency(txt)
-        if result is None:
-            print(f"{name:18s} -> SIGNAL UNAVAILABLE")
-        else:
-            print(
-                f"{name:18s} -> score={result['score']:.2f} "
-                f"({attribution_from_score(result['score'])}) :: {result['reason']}"
-            )
+    print(f"{'case':30s} {'s1(llm)':>8s} {'s2(burst)':>10s} {'combined':>9s} "
+          f"{'conf':>6s}  attribution")
+    print("-" * 90)
+    for name, txt in cases.items():
+        r = analyze(txt)
+        s1 = f"{r['llm_score']:.2f}" if r["llm_score"] is not None else "None"
+        s2 = f"{r['burstiness_score']:.2f}" if r["burstiness_score"] is not None else "None"
+        cs = f"{r['combined_score']:.2f}" if r["combined_score"] is not None else "None"
+        print(f"{name:30s} {s1:>8s} {s2:>10s} {cs:>9s} {r['confidence']:>6.2f}  "
+              f"{r['attribution']}  {r['flags']}")

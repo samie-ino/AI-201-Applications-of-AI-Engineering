@@ -170,9 +170,10 @@ per-signal breakdown, and an appeal pointer. Three variants, written out now:
    probabilistic and appeals are frictionless; I also bias the threshold high (0.65) so
    the system is reluctant to flag a human.
 3. **Very short text (a tweet, one sentence).** Variance is unestimable and the LLM judge
-   is unreliable on short input. **Length gate:** inputs under ~40 words or fewer than 3
-   sentences skip scoring and return Uncertain with an "insufficient text to analyze"
-   note rather than a guessed verdict.
+   is unreliable on short input. **Length gate:** the burstiness signal returns `null`
+   for inputs under ~25 words or fewer than 2 sentences (variance needs at least two
+   samples); that `null` triggers the single-signal / forced-Uncertain override rather
+   than a guessed structural verdict.
 4. **Mixed provenance** (human draft polished by AI, or AI draft heavily rewritten by a
    human). The binary human/AI framing genuinely can't represent this; the Uncertain band
    and the per-signal breakdown are the honest answer, not a forced call.
