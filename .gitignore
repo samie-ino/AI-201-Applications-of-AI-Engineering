@@ -19,6 +19,7 @@ chroma/
 # Provenance Guard runtime data
 ai201-project4-provenance-guard/audit_log.json
 ai201-project4-provenance-guard/submissions.json
+ai201-project4-provenance-guard/appeals.json
 
 # macOS
 .DS_Store

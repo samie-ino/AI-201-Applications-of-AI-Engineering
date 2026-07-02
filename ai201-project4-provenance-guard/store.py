@@ -15,6 +15,7 @@ import os
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _AUDIT_FILE = os.path.join(_DIR, "audit_log.json")
 _SUBMISSIONS_FILE = os.path.join(_DIR, "submissions.json")
+_APPEALS_FILE = os.path.join(_DIR, "appeals.json")
 
 
 def _load(path):
@@ -66,3 +67,56 @@ def get_submission(content_id):
         if rec.get("content_id") == content_id:
             return rec
     return None
+
+
+def update_submission(content_id, changes):
+    """Apply `changes` to the matching submission record; return it (or None)."""
+    subs = _load(_SUBMISSIONS_FILE)
+    updated = None
+    for rec in subs:
+        if rec.get("content_id") == content_id:
+            rec.update(changes)
+            updated = rec
+    if updated is not None:
+        _save(_SUBMISSIONS_FILE, subs)
+    return updated
+
+
+# --- appeals -----------------------------------------------------------------
+
+def save_appeal(record):
+    appeals = _load(_APPEALS_FILE)
+    appeals.append(record)
+    _save(_APPEALS_FILE, appeals)
+    return record
+
+
+def get_appeals():
+    """Return the reviewer queue (all appeals, newest last)."""
+    return _load(_APPEALS_FILE)
+
+
+def get_appeal(appeal_id):
+    for rec in _load(_APPEALS_FILE):
+        if rec.get("appeal_id") == appeal_id:
+            return rec
+    return None
+
+
+def get_appeal_by_content(content_id):
+    for rec in _load(_APPEALS_FILE):
+        if rec.get("content_id") == content_id:
+            return rec
+    return None
+
+
+def update_appeal(appeal_id, changes):
+    appeals = _load(_APPEALS_FILE)
+    updated = None
+    for rec in appeals:
+        if rec.get("appeal_id") == appeal_id:
+            rec.update(changes)
+            updated = rec
+    if updated is not None:
+        _save(_APPEALS_FILE, appeals)
+    return updated

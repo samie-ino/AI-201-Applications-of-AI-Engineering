@@ -166,6 +166,55 @@ def combine(s1, s2):
     }
 
 
+# --- transparency label (planning.md §3) -------------------------------------
+
+def build_label(result):
+    """Turn a combiner result into one of the three transparency-label variants.
+
+    The text varies by band and fills in the actual scores, so the same call never
+    returns identical text for different confidence levels.
+    """
+    band = result["attribution"]
+    ai = result["combined_score"]
+    conf = result["confidence"]
+    s1 = result["llm_score"]
+    s2 = result["burstiness_score"]
+    ai_txt = f"{ai:.2f}" if ai is not None else "n/a"
+
+    if band == "likely_ai":
+        return (
+            f"⚠️ Likely AI-generated. AI-likelihood {ai_txt} · confidence {conf:.2f}. "
+            f"Both checks leaned AI: the writing rhythm was relatively uniform "
+            f"(burstiness {s2:.2f}) and the phrasing read as formulaic (LLM {s1:.2f}). "
+            f"This is an automated estimate, not proof. If you wrote this yourself, "
+            f"you can appeal."
+        )
+    if band == "likely_human":
+        return (
+            f"✅ Likely human-written. AI-likelihood {ai_txt} · confidence {conf:.2f}. "
+            f"Both checks leaned human: natural sentence-length variation "
+            f"(burstiness {s2:.2f}) and idiosyncratic phrasing (LLM {s1:.2f}). "
+            f"This is an automated estimate, not a guarantee of authorship."
+        )
+
+    # uncertain — explain *why* it's inconclusive from the override flags
+    flags = result.get("flags", [])
+    if "signals_disagree" in flags:
+        why = f"our two checks disagreed (burstiness {s2:.2f} vs LLM {s1:.2f})"
+    elif any(f.startswith("single_signal") for f in flags):
+        avail = f"LLM {s1:.2f}" if s1 is not None else f"burstiness {s2:.2f}"
+        why = f"only one check was available ({avail}), so we couldn't cross-check"
+    elif "no_signals_available" in flags:
+        why = "no detection signal was available"
+    else:
+        why = "both checks landed in the middle"
+    return (
+        f"❓ Uncertain — inconclusive. AI-likelihood {ai_txt} · confidence {conf:.2f}. "
+        f"We can't make a reliable call because {why}. Treat this as inconclusive — "
+        f"do not use it as evidence either way."
+    )
+
+
 def analyze(text):
     """Run both signals + combiner. Returns the full result dict for the endpoint."""
     sig1 = llm_fluency(text)
