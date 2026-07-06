@@ -70,3 +70,32 @@ Bugs fixed in this milestone: **Issue #1 (streak)**, **Issue #2 (Friends Listeni
 **My fix and side-effect check.** Changed `songs[:-1]` to `songs` so all rows are serialized. Side-effect check: re-ran `test_playlists.py` — all 3 pass, including `test_empty_playlist_returns_empty_list`. That empty-playlist case is the important other side of the boundary: on an empty list `[]`, both `[][:-1]` and `[]` evaluate to `[]`, so removing the slice does not introduce an index error or change the empty-playlist behavior. Ordering is unaffected because the `order_by(asc(position))` clause was never touched.
 
 **AI usage.** I gave the AI the `get_playlist_songs` function and asked "what edge cases could make this return fewer rows than the query fetched?"; it flagged the `[:-1]` slice, which matched what I had already spotted reading the last line. Diagnosis and fix verified by re-running the tests myself.
+
+---
+
+## Issue #2 — Friends Listening Now shows people from yesterday
+
+**How I reproduced it.** There was no existing test for the feed, so I wrote a small repro script (`scratchpad/repro_feed.py`): create a user `me` with one friend, insert a single `ListeningEvent` for the friend timestamped **20 hours ago**, then call `get_friends_listening_now(me.id)`. With today being 2026-07-06, the 20h-old event lands on **2026-07-05 (yesterday)**. The feed returned that friend (`feed length = 1`) — a person from yesterday appearing in a feed labeled "Listening Now." That matches the reported symptom.
+
+**How I found the root cause.** Call chain: `GET /<user_id>/listening-now` → `routes/feed.py` → `get_friends_listening_now()` in [feed_service.py](ai201-project5-mixtape-starter/services/feed_service.py). Reading the function, the recency filter is `ListeningEvent.listened_at >= cutoff` where `cutoff = datetime.now(timezone.utc) - RECENT_THRESHOLD`, and `RECENT_THRESHOLD = timedelta(hours=24)` at [feed_service.py:13](ai201-project5-mixtape-starter/services/feed_service.py#L13). The filter direction and the `>=` comparison are correct; the defect is the *size* of the window. A rolling 24-hour window, by definition, reaches back into the previous calendar day, so "Listening Now" was really "listened at any point in the last day."
+
+**The root cause.** The recency boundary for the "Listening Now" feed was set to 24 hours. Because the cutoff is `now - 24h`, any friend whose most recent listen was up to a full day ago still satisfied `listened_at >= cutoff` and was included. "Listening Now" is meant to reflect friends who are *currently or very recently* active, so a day-long window is far too wide and pulls in yesterday's activity. It is a boundary-value bug: the threshold constant, not the comparison logic, was wrong.
+
+**My fix and side-effect check.** I changed `RECENT_THRESHOLD` from `timedelta(hours=24)` to `timedelta(minutes=15)` (roughly the span of a few songs — "actively listening right now") and added a comment explaining the intent. To verify both sides of the boundary I added `tests/test_feed.py`: `test_recent_listen_appears` (a friend who listened 5 minutes ago **does** appear) and `test_yesterday_listen_does_not_appear` (a friend who listened 20h ago **does not**). Side-effect check: `get_activity_feed()` is documented as *not* recency-filtered and does not reference `RECENT_THRESHOLD`, so it is unaffected — I locked that in with `test_activity_feed_still_shows_older_events`, which confirms the older event still surfaces there. Re-ran the repro script: feed length is now 0 for the 20h-old event. Full suite: 16 passed.
+
+**AI usage.** I asked the AI to explain the difference between a rolling `now - timedelta` window and a same-calendar-day filter once I'd narrowed the bug to the `cutoff` computation, to sanity-check that shrinking the constant (rather than switching to a date-equality filter) was the smaller, correct fix for "Now" semantics. The reproduction, the choice of window, and the verification tests were mine.
+
+---
+
+## Verification — final state
+
+```
+$ python -m pytest tests/ -q
+................                                                          [100%]
+16 passed
+```
+
+All three fixes are on branch `bugfix/mixtape`, each in its own commit:
+- `fix: remove spurious Sunday guard that reset listening streak` (Issue #1)
+- `fix: return all playlist songs instead of dropping the last one` (Issue #5)
+- `fix: scope "Friends Listening Now" to a recent window, not 24h` (Issue #2)
