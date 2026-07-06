@@ -56,3 +56,17 @@ Bugs fixed in this milestone: **Issue #1 (streak)**, **Issue #2 (Friends Listeni
 **My fix and side-effect check.** I removed the `and today.weekday() != 6` clause so the branch is simply `elif days_since_last == 1:`, restoring the documented rule ("listened yesterday → increment"). Side-effect check: re-ran the full `test_streaks.py` suite — all 5 pass, including `test_streak_does_not_double_count_same_day` (the `days_since_last == 0` early return still fires) and `test_streak_resets_after_skipped_day` (the `else` reset still fires when `days_since_last > 1`). Both sides of the day boundary are intact; only the spurious Sunday reset is gone.
 
 **AI usage.** After locating line 73 myself, I asked an AI to confirm the return values of `datetime.weekday()` vs `isoweekday()` to be certain 6 = Sunday. I read the change and verified it against the passing tests myself.
+
+---
+
+## Issue #5 — The last song in a playlist never shows up
+
+**How I reproduced it.** Ran `pytest tests/test_playlists.py`. `test_playlist_returns_all_songs` failed (`assert 4 == 5`) and `test_playlist_returns_songs_in_order` failed (returned `["Track 1"…"Track 4"]`, missing `"Track 5"`). The fixture seeds a playlist with five songs at positions 1–5; retrieval returned only the first four. I confirmed the missing item is always the *last* one by position, not a random omission.
+
+**How I found the root cause.** Call chain from the README: `GET /playlists/<id>/songs` → `routes/playlists.py` → `get_playlist_songs()` in [playlist_service.py](ai201-project5-mixtape-starter/services/playlist_service.py). The SQL is correct — it joins `playlist_entries`, filters by `playlist_id`, and orders `asc(position)`. The tell was the very last line, [playlist_service.py:66](ai201-project5-mixtape-starter/services/playlist_service.py#L66): `return [song.to_dict() for song in songs[:-1]]`. The `[:-1]` slice drops the final element of an already-correct, correctly-ordered list. The function's own docstring says "returns all songs in the playlist," which directly contradicts the slice.
+
+**The root cause.** After the query returns all N songs in position order, the list comprehension iterates over `songs[:-1]` — a slice that excludes the last element — so exactly one song, the highest-position one, is always omitted. There was nothing wrong with the query or the ordering; the truncation was purely in the Python slice applied to the result.
+
+**My fix and side-effect check.** Changed `songs[:-1]` to `songs` so all rows are serialized. Side-effect check: re-ran `test_playlists.py` — all 3 pass, including `test_empty_playlist_returns_empty_list`. That empty-playlist case is the important other side of the boundary: on an empty list `[]`, both `[][:-1]` and `[]` evaluate to `[]`, so removing the slice does not introduce an index error or change the empty-playlist behavior. Ordering is unaffected because the `order_by(asc(position))` clause was never touched.
+
+**AI usage.** I gave the AI the `get_playlist_songs` function and asked "what edge cases could make this return fewer rows than the query fetched?"; it flagged the `[:-1]` slice, which matched what I had already spotted reading the last line. Diagnosis and fix verified by re-running the tests myself.
