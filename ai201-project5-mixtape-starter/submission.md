@@ -1,3 +1,22 @@
+# AI Usage
+
+This section is an honest account of how I used AI tools across the project. AI was involved throughout — not just to write code, but as a navigation and debugging partner. I did not do this alone, and the point below about where AI got it wrong is the most important part.
+
+**Navigation.** I used AI to trace call chains through an unfamiliar codebase faster than reading every file cold. For each bug I started from the route and asked the AI to walk the chain: `route → service function → the calls it makes`. That's how I got to `update_listening_streak`, `get_playlist_songs`, and `get_friends_listening_now` quickly instead of grepping blindly. AI also read `models.py` with me and summarized the data model (the association tables `song_tags`, `playlist_entries`, `friendships`) so I understood the joins before reading the queries.
+
+**Understanding code I'd already found.** Once I had a suspicious function in front of me, I used AI to explain it and to check my reasoning:
+- Confirmed `datetime.weekday()` returns 6 for Sunday (vs `isoweekday()` = 7) — this pinned down Issue #1.
+- Asked "what edge cases make this return fewer rows than the query fetched?" for `get_playlist_songs`, which corroborated the `[:-1]` slice I'd spotted (Issue #5).
+- Asked for the difference between a rolling `now - timedelta` window and a same-calendar-day filter, to sanity-check that shrinking the constant was the smaller correct fix for "Now" semantics (Issue #2).
+
+**Where AI was wrong / where I had to verify myself.** The most important correction this milestone: the Milestone 2 notes claimed the **search bug (#3)** reproduced with three duplicate rows — a plausible reading of the `outerjoin(song_tags)`, since a join across a one-to-many *does* multiply rows in raw SQL. That diagnosis was wrong. When I actually ran `pytest tests/test_search.py`, all five tests **passed**. Running the code (not just reasoning about it) revealed that SQLAlchemy's legacy `db.session.query(Song).all()` API de-duplicates full mapped entities by primary key before returning them, so the join never produces user-visible duplicates. If I had trusted the "it duplicates" explanation and written a fix + RCA around it, I'd have documented a bug that doesn't reproduce. I dropped #3, verified the real behavior myself, and fixed #2 in its place. Details are in the note at the top of the Milestone 3 section.
+
+A second judgment call AI could not settle: the correct "Listening Now" window value (Issue #2). The code only tells you it was 24h and that 24h is too wide; it doesn't say what the *right* value is. That's a product-semantics decision, not something derivable from the source, so I chose 15 minutes deliberately and documented the reasoning rather than treating an AI suggestion as ground truth.
+
+**My verification loop.** For every fix the pattern was: read the code → form a hypothesis → *run it* (pytest, plus a standalone repro script for the feed since it had no test) → confirm the symptom before fixing and its absence after. The search episode is why I insisted on running rather than reasoning — a plausible explanation is not a reproduced bug.
+
+---
+
 # Mixtape Bug Hunt — Milestone 2 Reproduction Notes
 
 No production code changes were made during this milestone. The goal here was to reproduce each selected bug from the app’s real behavior before attempting any fixes.
