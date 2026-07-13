@@ -45,9 +45,11 @@ I did not ask AI to write either position from scratch — both drafts were mine
 **Engagement with reviewer's point:**
 
 ## Comment 6 — Rebase
-**What conflicted:**
-**How I resolved it:**
-**How I verified no conflict remains:**
+**What conflicted:** I ran `git fetch origin && git rebase origin/main` on `feature/watchlist`. `main` had moved ahead with `refactor: migrate film IDs from integer to UUID` (`Film.id` went from `db.Integer` to `db.String(36)`, and `CollectionEntry.film_id` was updated to match) plus a `.gitignore` commit. Git reported "Successfully rebased" with **no conflict markers at all** — but that was misleading. The commit that originally added `WatchlistEntry` to `models.py` landed in the same region of the file that the UUID refactor touched, and git's merge silently resolved it by dropping the `WatchlistEntry` class entirely (`git diff` between that replayed commit and its new parent came back empty). Nothing in the rebase output flagged this — I only found it because `pytest` failed to collect `tests/test_watchlist.py` with `ImportError: cannot import name 'WatchlistEntry' from 'models'`.
+
+**How I resolved it:** Re-added the `WatchlistEntry` class to `models.py`, this time with `film_id = db.Column(db.String(36), db.ForeignKey("film.id"), nullable=False)` instead of `db.Integer`, matching `Film.id`'s new UUID type and the same pattern `CollectionEntry.film_id` already uses post-refactor. I then swept the rest of the watchlist code for leftover integer-ID assumptions from the pre-refactor branch: the `film_id (int)` docstring in `add_to_watchlist()` (now `film_id (str): UUID of the film.`), the `Body: { "film_id": <int> }` docstring in `routes/watchlist/watchlist.py` (now `"<uuid>"`, matching `routes/collection.py`'s convention), and `tests/test_watchlist.py`'s `fake_film_id = 999999` (now a fake UUID string, `"00000000-0000-0000-0000-000000000000"`, matching `test_collection.py`'s pattern).
+
+**How I verified no conflict remains:** Ran `pytest tests/ -v` — all 5 tests pass. Then manually exercised the full flow in a Python shell: created a `User` and `Film` (confirming `film.id` is now a UUID string), called `add_to_watchlist()` and `get_watchlist()` with that UUID, and confirmed `AlreadyInWatchlistError` fires correctly on a second add — all working with real UUIDs rather than integers. Finally, ran `git log --merges origin/main..HEAD`, which returned nothing, confirming a linear history with no merge commits in the range unique to this branch (the one merge commit visible in `git log --graph` belongs to `main`'s own pre-existing history, not something introduced by merging `main` into the feature branch).
 
 ## PR Description
 <!-- Written at the end — feature overview, design decisions, manual testing steps -->
