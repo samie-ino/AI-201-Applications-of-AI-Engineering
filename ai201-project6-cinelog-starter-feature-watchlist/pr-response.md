@@ -9,6 +9,8 @@ For Comments 4 and 5, I wrote a first draft of each position, then used AI as a 
 
 I did not ask AI to write either position from scratch — both drafts were mine before the stress-test pass, and I only incorporated critiques that pointed at genuine gaps rather than accepting restated points.
 
+- **Commit format check:** Before finalizing, I checked the `git log --oneline` output against CONTRIBUTING.md's own prefix table (`feat`/`fix`/`test`/`docs`/`refactor`/`chore`) rather than assuming the first draft was right. That review caught two mismatches: the rename commit was originally prefixed `fix:`, but a pure rename with no behavior change is what CONTRIBUTING.md defines `refactor:` for, so I reworded it. The sort-order commit was originally prefixed `feat:`, but it changes existing behavior rather than adding a new capability, so I reworded it to `fix:`. Both rewords were done via a real `git rebase -i` reword, not a squash-and-recommit.
+
 ## Comment 1 — Rename
 **What I did:** Renamed `save_to_watchlist()` to `add_to_watchlist()` in `services/watchlist_service.py`, matching the naming convention used by `add_to_collection()` in `services/collection_service.py`. Updated the one call site in `routes/watchlist/watchlist.py` (both the import and the call in `add_film()`).
 **How I verified:** Ran `grep -rn "save_to_watchlist" --include="*.py" .` from the project root after the edit to confirm zero remaining references to the old name. Also ran `pytest tests/ -v` — all 4 existing tests still pass, confirming nothing else depended on the old name.
@@ -39,11 +41,6 @@ I did not ask AI to write either position from scratch — both drafts were mine
 
 *Revised after stress-testing this position (see AI Usage):* my "top of mind" argument is weaker than I first gave it credit for in two cases I hadn't accounted for. A collection tends to grow one entry at a time as someone finishes a film, so "most recent" reliably means "most relevant right now" — but a watchlist is often bulk-populated in a single browsing session (e.g., adding a dozen films from a "best of the decade" list at once), and in that scenario "newest first" clusters near-identical timestamps that don't carry a meaningful priority signal. And a watchlist is longer-lived than a collection — it isn't cleared as items get watched the way a collection accumulates finished films, so it can grow into the hundreds over months, which is exactly when alphabetical findability starts to matter *more*, not less. That's a real argument the "consistency with `get_collection`" framing doesn't answer. I'm still implementing date-added descending for this PR because it's the maintainer's stated preference and the simpler behavior to ship correctly under review, but I'm treating the `?sort=` follow-up less as a nice-to-have and more as the actual resolution to this disagreement — chronological and alphabetical are each right for a different use case, and the honest fix is letting the client choose rather than the service picking one winner permanently.
 
-## Comment 5 — Sort order
-**My position:**
-**Reasoning:**
-**Engagement with reviewer's point:**
-
 ## Comment 6 — Rebase
 **What conflicted:** I ran `git fetch origin && git rebase origin/main` on `feature/watchlist`. `main` had moved ahead with `refactor: migrate film IDs from integer to UUID` (`Film.id` went from `db.Integer` to `db.String(36)`, and `CollectionEntry.film_id` was updated to match) plus a `.gitignore` commit. Git reported "Successfully rebased" with **no conflict markers at all** — but that was misleading. The commit that originally added `WatchlistEntry` to `models.py` landed in the same region of the file that the UUID refactor touched, and git's merge silently resolved it by dropping the `WatchlistEntry` class entirely (`git diff` between that replayed commit and its new parent came back empty). Nothing in the rebase output flagged this — I only found it because `pytest` failed to collect `tests/test_watchlist.py` with `ImportError: cannot import name 'WatchlistEntry' from 'models'`.
 
@@ -51,5 +48,41 @@ I did not ask AI to write either position from scratch — both drafts were mine
 
 **How I verified no conflict remains:** Ran `pytest tests/ -v` — all 5 tests pass. Then manually exercised the full flow in a Python shell: created a `User` and `Film` (confirming `film.id` is now a UUID string), called `add_to_watchlist()` and `get_watchlist()` with that UUID, and confirmed `AlreadyInWatchlistError` fires correctly on a second add — all working with real UUIDs rather than integers. Finally, ran `git log --merges origin/main..HEAD`, which returned nothing, confirming a linear history with no merge commits in the range unique to this branch (the one merge commit visible in `git log --graph` belongs to `main`'s own pre-existing history, not something introduced by merging `main` into the feature branch).
 
+## Final Commit History
+`git log --oneline` on `feature/watchlist` (rebased onto `main`, no merge commits in this branch's own range):
+
+```
+bc556b6 fix: migrate WatchlistEntry film_id to UUID after rebasing onto main
+ebab210 fix: sort get_watchlist by date added instead of alphabetically
+1b2d31f fix: add missing Film-WatchlistEntry relationship
+ece6ca7 test: add test for nonexistent film_id in add_to_watchlist
+a044659 fix: add deduplication check to prevent duplicate watchlist entries
+e3df718 refactor: rename save_to_watchlist to add_to_watchlist per naming convention
+d020ead feat: add watchlist model and add_to_watchlist endpoint
+```
+
+(`git log --merges origin/main..HEAD` returns nothing — the only merge commit reachable from this branch belongs to `main`'s own pre-existing history, not something introduced by merging `main` into the feature branch. This snapshot was captured just before adding this doc as the final `docs:` commit, so the full history is these 7 commits plus one more `docs: add pr-response.md with review responses and PR description` on top.)
+
 ## PR Description
 <!-- Written at the end — feature overview, design decisions, manual testing steps -->
+
+### What this PR does
+Adds a watchlist feature to CineLog: users can save films they want to watch later (distinct from the existing collection, which tracks films already watched). A `WatchlistEntry` links a user to a film with a `date_added` timestamp and a `public` visibility flag. Two endpoints: `GET /watchlist/<user_id>` returns a user's watchlist (newest first), and `POST /watchlist/<user_id>/add` adds a film to it.
+
+### Design decisions
+- **Default visibility (`public=True`):** New watchlist entries default to public rather than private. This optimizes for CineLog's core social/discovery mechanic and avoids a cold-start problem where a brand-new feature ships invisible-by-default and never gets used. The tradeoff — this is a real privacy-by-default deviation, and "want to watch" can be as revealing as "already watched" — is acknowledged in Comment 4 below, along with a proposed onboarding opt-in prompt as a fast-follow.
+- **Sort order (`date_added` descending):** `get_watchlist()` sorts newest-first, matching `get_collection()`'s ordering, rather than alphabetically by title. This is discussed in Comment 5 below, including where the "newest first" argument is weaker (bulk-added entries, very long-lived watchlists) and why a future `?sort=` parameter is likely the real long-term answer rather than picking one default forever.
+
+### How to manually test
+1. `pip install -r requirements.txt`
+2. `python app.py` (starts on `http://localhost:5000` with a local SQLite DB)
+3. Create a user and a film via the existing `films`/collection setup (or directly in a Python shell via `db.session.add(...)`, as done throughout this PR's verification steps).
+4. Add a film to the watchlist:
+   ```
+   POST /watchlist/<user_id>/add
+   Body: { "film_id": "<uuid>" }
+   ```
+   Expect `201` with the new entry (including `public: true` by default).
+5. Repeat the same request with the same `user_id`/`film_id` — expect it to fail with `AlreadyInWatchlistError` (no duplicate row created).
+6. `GET /watchlist/<user_id>` — expect the film(s) back sorted by `date_added` descending (add a second film and confirm it appears first).
+7. Run the automated suite: `pytest tests/ -v` — all 5 tests should pass (4 collection tests + `test_add_to_watchlist_nonexistent_film_raises`).
