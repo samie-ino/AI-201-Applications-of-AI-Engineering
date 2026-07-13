@@ -49,7 +49,11 @@ I did not ask AI to write either position from scratch — both drafts were mine
 **How I verified no conflict remains:** Ran `pytest tests/ -v` — all 5 tests pass. Then manually exercised the full flow in a Python shell: created a `User` and `Film` (confirming `film.id` is now a UUID string), called `add_to_watchlist()` and `get_watchlist()` with that UUID, and confirmed `AlreadyInWatchlistError` fires correctly on a second add — all working with real UUIDs rather than integers. Finally, ran `git log --merges origin/main..HEAD`, which returned nothing, confirming a linear history with no merge commits in the range unique to this branch (the one merge commit visible in `git log --graph` belongs to `main`'s own pre-existing history, not something introduced by merging `main` into the feature branch).
 
 ## Final Commit History
-`git log --oneline` on `feature/watchlist` (rebased onto `main`, no merge commits in this branch's own range):
+
+<!-- TODO: after pushing, run `git log --oneline` in your own terminal and paste
+     a real screenshot here, e.g.: ![git log --oneline](./git-log-screenshot.png) -->
+
+`git log --oneline` on `feature/watchlist` (rebased onto `main`, no merge commits in this branch's own range) as of the last commit before this doc was added:
 
 ```
 bc556b6 fix: migrate WatchlistEntry film_id to UUID after rebasing onto main
@@ -61,7 +65,9 @@ e3df718 refactor: rename save_to_watchlist to add_to_watchlist per naming conven
 d020ead feat: add watchlist model and add_to_watchlist endpoint
 ```
 
-(`git log --merges origin/main..HEAD` returns nothing — the only merge commit reachable from this branch belongs to `main`'s own pre-existing history, not something introduced by merging `main` into the feature branch. This snapshot was captured just before adding this doc as the final `docs:` commit, so the full history is these 7 commits plus one more `docs: add pr-response.md with review responses and PR description` on top.)
+Plus this doc's own commit on top: `docs: add pr-response.md with review responses and PR description`.
+
+(`git log --merges origin/main..HEAD` returns nothing — the only merge commit reachable from this branch belongs to `main`'s own pre-existing history, not something introduced by merging `main` into the feature branch.)
 
 ## PR Description
 <!-- Written at the end — feature overview, design decisions, manual testing steps -->
