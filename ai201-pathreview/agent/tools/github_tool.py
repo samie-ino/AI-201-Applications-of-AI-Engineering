@@ -109,6 +109,12 @@ class GitHubTool(BaseTool):
             "homepage": repo_json.get("homepage") or "",
         }
 
+        # Compute user's contribution streak (longest consecutive days with commits)
+        try:
+            metadata["contribution_streak"] = self._compute_contribution_streak(username)
+        except Exception:
+            metadata["contribution_streak"] = 0
+
         logger.info("github_repo_fetched", username=username, repo=repo_name,
                    language=metadata["primary_language"], stars=metadata["star_count"])
 
@@ -135,3 +141,71 @@ class GitHubTool(BaseTool):
             return response.status_code == 200
         except Exception:
             return False
+
+    def _compute_contribution_streak(self, username: str) -> int:
+        """Compute the longest consecutive-day commit streak for a user.
+
+        Strategy: use the public events API (`/users/{username}/events/public`) and
+        mark days where the user performed a `PushEvent`. This provides a recent
+        activity-based approximation for contribution streaks.
+
+        Returns:
+            int: longest consecutive-day streak (0 if none or on error)
+        """
+        if not username:
+            return 0
+
+        headers = {}
+        if self.api_token:
+            headers["Authorization"] = f"token {self.api_token}"
+
+        active_days = set()
+
+        # Fetch up to 3 pages of events (max ~300 events) to cover recent history
+        for page in range(1, 4):
+            url = f"{self.base_url}/users/{username}/events/public?page={page}&per_page=100"
+            try:
+                resp = httpx.get(url, headers=headers, timeout=10.0)
+                resp.raise_for_status()
+                events = resp.json()
+            except Exception:
+                break
+
+            if not events:
+                break
+
+            for ev in events:
+                if ev.get("type") == "PushEvent":
+                    created = ev.get("created_at")
+                    if not created:
+                        continue
+                    # parse ISO timestamp like 2023-07-01T12:34:56Z
+                    try:
+                        if created.endswith("Z"):
+                            created = created[:-1] + "+00:00"
+                        dt = __import__("datetime").datetime.fromisoformat(created)
+                        active_days.add(dt.date())
+                    except Exception:
+                        continue
+
+        if not active_days:
+            return 0
+
+        # Compute longest consecutive streak from the set of dates
+        days = sorted(active_days)
+        longest = 1
+        current = 1
+        for i in range(1, len(days)):
+            prev = days[i - 1]
+            cur = days[i]
+            if (cur - prev).days == 1:
+                current += 1
+            else:
+                if current > longest:
+                    longest = current
+                current = 1
+
+        if current > longest:
+            longest = current
+
+        return longest
