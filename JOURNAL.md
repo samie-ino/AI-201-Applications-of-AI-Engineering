@@ -1,10 +1,21 @@
 # JOURNAL
 
-## Week 7 — PathReview submission / issue work
+## Week 7 — Issue selection
 
-- **Date:** 2026-07-22
-- **Repository:** This fork of PathReview (workspace contains multiple starter labs).
+**Issue link:** [paste link here]
 
-### Issue link
+**Issue title:** [paste issue title here]
 
-- ISSUE: <INSERT ISSUE URL HERE — e.g. https://github.com/<your-username>/<repo>/issues/###>
+**Tier:** [ ] Tier 1  [ ] Tier 2  [ ] Tier 3
+
+**Problem summary:**
+[In 3–5 sentences, in your own words: what the issue is (not a copy-paste of
+the title), what is currently broken or missing, and what a successful fix
+would accomplish. Naming the part of the codebase it affects is helpful context.]
+
+**Branch name:** feat/52-contribution-streak
+
+**Setup confirmation:** [ ] App runs locally at localhost:5173
+
+**Cohort ledger:** [ ] Issue added to cohort ledger
+
