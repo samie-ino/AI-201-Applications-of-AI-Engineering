@@ -3,7 +3,7 @@
 This is the main README for the PathReview repository.
 
 ## Project docs
-- [README-frontend.md](frontend/README-frontend.md) — frontend app setup and usage
+- [FRONTEND-README.md](frontend/FRONTEND-README.md) — frontend app setup and usage
 - [PLAN.md](PLAN.md) — Week 8 solution plan for the contribution-streak issue
 - [JOURNAL.md](JOURNAL.md) — weekly progress notes
 
