@@ -1,19 +1,29 @@
 # Week 8 Plan: Add contribution streak support to repo analysis
 
-## Problem
-The pathreview repo analysis pipeline exposes repository metadata fields such as stars, tests, and last commit date, but it does not expose a contribution streak metric even when contribution-history data is available. This makes the portfolio review less informative for contributors and leaves the issue described in the project backlog unresolved.
+## Solution plan
 
-## Approach
-1. Reproduce the gap by adding a focused regression test that expects a contribution-streak field from repo metadata with contribution-history entries.
-2. Implement support in the repo parser so it computes the longest consecutive-day streak from contribution-history data and includes it in the parsed metadata and summary text.
-3. Ensure the GitHub metadata tool passes through contribution-history information so the parser can consume it.
-4. Run the relevant unit tests and record the result in the journal.
+**Issue:** Add a `contribution_streak` field to the GitHub analysis (longest consecutive days of commits) — https://github.com/samie-ino/AI-201-Applications-of-AI-Engineering/issues/52
 
-## Files to touch
+### Understand
+The root cause is that the repo analysis pipeline does not expose a contribution-streak field even when contribution-history data is present. The expected behavior is to compute and surface the longest consecutive-day streak, while the current behavior leaves this metadata missing.
+
+### Map
+The work touches the repo analysis flow in:
 - ai201-pathreview/tests/unit/test_repo_analyzer.py
 - ai201-pathreview/ingestion/parsers/repo_analyzer.py
 - ai201-pathreview/agent/tools/github_tool.py
 
-## Risks / unknowns
-- Some repository payloads may provide contribution history in slightly different shapes, so the parser should tolerate a few common formats.
-- The GitHub API may not expose contribution data directly in the basic repository endpoint, so the implementation currently relies on the repository payload structure already supplied by the environment and future ingestion sources.
+### Plan
+1. Reproduce the missing field with a regression test using contribution-history data.
+2. Implement contribution-streak computation in the repo parser and include it in parsed metadata and summary text.
+3. Ensure the GitHub metadata tool carries contribution-history data into the parser.
+4. Run the relevant unit tests and update the journal with the verified result.
+
+### Inputs & outputs
+The fix takes repository metadata with contribution-history information as input and should output repo metadata that includes a numeric `contribution_streak` value.
+
+### Risks & unknowns
+Some repository payloads may provide contribution history in slightly different shapes, so the parser should tolerate a few common formats. The GitHub API may not expose contribution history directly in the basic repository endpoint, so the implementation may need to rely on data already supplied by the environment or future ingestion sources.
+
+### Edge cases
+The fix should handle repositories with no contribution history, partial history, and entries with different date or count field names without crashing.

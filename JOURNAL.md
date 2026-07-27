@@ -17,20 +17,17 @@ The PathReview repository analysis pipeline exposes repository metadata such as 
 
 **Cohort ledger:** [ ] Issue added to cohort ledger
 
-## Week 8 — Reproduction and plan
+## Week 8 — Reproduction & solution planning
 
-**Issue link:** https://github.com/samie-ino/AI-201-Applications-of-AI-Engineering/issues/52
+**Reproduction commit link:** https://github.com/samie-ino/AI-201-Applications-of-AI-Engineering/commit/edf609e
 
-**Issue title:** Add a `contribution_streak` field to the GitHub analysis (longest consecutive days of commits)
+**Reproduction summary:**
+I reproduced the issue by adding a regression test in [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) that passed repository metadata with contribution-history data. The test failed with `KeyError: 'contribution_streak'`, confirming that the repo analysis pipeline was not exposing the expected field.
 
-**Reproduction:**
-I added a regression test in [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) that passes repository metadata including a contribution-history list. The test initially failed with `KeyError: 'contribution_streak'`, confirming the field was missing from the parsed repo metadata.
+**PLAN.md link:** [PLAN.md](PLAN.md)
 
-**Verification:**
-I verified the fix locally by running:
-`/workspaces/AI-201-Applications-of-AI-Engineering/.venv/bin/python -m pytest -q tests/unit/test_repo_analyzer.py`
-Result: `1 passed in 0.16s`.
+**Walkthrough video (recommended):** Not recorded yet
 
-**Plan file:**
-See [PLAN.md](PLAN.md) for the implementation plan and file list.
+**Blockers or open questions:**
+None at the moment.
 
