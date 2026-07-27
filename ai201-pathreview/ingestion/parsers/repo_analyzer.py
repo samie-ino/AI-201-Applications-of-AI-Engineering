@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .base import BaseParser, ParseResult
 
@@ -67,6 +67,9 @@ class RepoAnalyzer(BaseParser):
         # Extract last commit date
         last_commit_date = repo_data.get("pushed_at", None)
 
+        # Compute contribution streak from commit history when available
+        contribution_streak = self._calculate_contribution_streak(repo_data)
+
         # Detect tech stack
         tech_stack = self._detect_tech_stack(repo_data)
 
@@ -81,6 +84,7 @@ class RepoAnalyzer(BaseParser):
             f"Has README: {has_readme}",
             f"Has Tests: {has_tests}",
             f"Has CI/CD: {has_ci}",
+            f"Contribution Streak: {contribution_streak}",
             f"Tech Stack: {', '.join(tech_stack) if tech_stack else 'Not detected'}",
             f"URL: {repo_data.get('html_url', 'Unknown')}",
         ]
@@ -94,6 +98,7 @@ class RepoAnalyzer(BaseParser):
             "has_readme": has_readme,
             "has_ci": has_ci,
             "last_commit_date": last_commit_date,
+            "contribution_streak": contribution_streak,
             "star_count": star_count,
             "fork_count": fork_count,
             "open_issues_count": open_issues_count,
@@ -107,6 +112,61 @@ class RepoAnalyzer(BaseParser):
             metadata=metadata,
             source_type="repo",
         )
+
+    def _calculate_contribution_streak(self, repo_data: dict) -> int:
+        """Calculate the longest consecutive day streak from commit history."""
+        if "contribution_streak" in repo_data:
+            explicit_streak = repo_data.get("contribution_streak")
+            if explicit_streak is not None:
+                return int(explicit_streak)
+
+        history = repo_data.get("contribution_history") or []
+        if not history:
+            return 0
+
+        parsed_dates: list[datetime] = []
+        for entry in history:
+            if isinstance(entry, dict):
+                date_value = entry.get("date") or entry.get("day")
+                count = entry.get("count") or entry.get("contributions") or 0
+            elif isinstance(entry, str):
+                date_value = entry
+                count = 1
+            else:
+                continue
+
+            if not date_value or not count:
+                continue
+
+            try:
+                if isinstance(date_value, datetime):
+                    parsed_date = date_value
+                else:
+                    normalized = str(date_value).replace("Z", "+00:00")
+                    parsed_date = datetime.fromisoformat(normalized)
+            except ValueError:
+                continue
+
+            parsed_dates.append(parsed_date)
+
+        if not parsed_dates:
+            return 0
+
+        parsed_dates = sorted(parsed_dates)
+        streak = 1
+        current_streak = 1
+        previous_date = parsed_dates[0].date()
+
+        for parsed_date in parsed_dates[1:]:
+            current_date = parsed_date.date()
+            if current_date == previous_date + timedelta(days=1):
+                current_streak += 1
+            elif current_date > previous_date + timedelta(days=1):
+                current_streak = 1
+            previous_date = current_date
+            streak = max(streak, current_streak)
+
+        return streak
 
     def _detect_ci(self, repo_data: dict) -> bool:
         """Check if repository has CI/CD configured."""

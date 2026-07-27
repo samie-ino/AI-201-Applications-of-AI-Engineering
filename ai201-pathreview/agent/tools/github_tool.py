@@ -104,6 +104,8 @@ class GitHubTool(BaseTool):
             "fork_count": repo_json.get("forks_count", 0),
             "open_issues_count": repo_json.get("open_issues_count", 0),
             "last_commit_date": repo_json.get("pushed_at", ""),
+            "contribution_history": repo_json.get("contribution_history", []),
+            "contribution_streak": repo_json.get("contribution_streak", 0),
             "has_readme": self._has_readme(username, repo_name),
             "topics": repo_json.get("topics", []),
             "homepage": repo_json.get("homepage") or "",
