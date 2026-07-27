@@ -24,7 +24,7 @@ The PathReview repository analysis pipeline exposes repository metadata such as 
 **Reproduction summary:**
 I reproduced the issue by adding a regression test in [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) that passed repository metadata with contribution-history data. The test failed with `KeyError: 'contribution_streak'`, confirming that the repo analysis pipeline was not exposing the expected field.
 
-**PLAN.md link:** [PLAN.md](PLAN.md)
+**PLAN.md link:** [plan.md](ai201-pathreview/plan.md)
 
 **Walkthrough video (recommended):** Not recorded yet
 
