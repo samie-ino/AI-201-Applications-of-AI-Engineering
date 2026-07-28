@@ -10,13 +10,15 @@ The three full transparency-label variants arrive in M5; label text here is prov
 
 import datetime
 import uuid
+from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
 import detector
 import store
@@ -35,6 +37,16 @@ def _now():
         datetime.datetime.now(datetime.timezone.utc)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
+    )
+
+
+@app.get("/")
+def index():
+    return jsonify(
+        {
+            "status": "ok",
+            "message": "Provenance Guard API. Use /submit, /appeal, /log, or /health.",
+        }
     )
 
 

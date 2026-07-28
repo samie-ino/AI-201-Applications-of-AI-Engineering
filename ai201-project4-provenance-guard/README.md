@@ -220,6 +220,25 @@ The first 10 succeed; the 11th and 12th return **429 Too Many Requests**.
 
 ---
 
+## 7. Run locally, limitations, and AI usage
+
+### Run locally
+1. Copy [.env.example](.env.example) to `.env` and add a Groq API key.
+2. Install dependencies with `pip install -r requirements.txt`.
+3. Start the app with `python app.py`.
+4. Exercise the endpoints with `POST /submit`, `POST /appeal`, `GET /appeals`, `GET /log`, and `GET /health`.
+
+### Known limitations
+- The detector uses a lightweight heuristic and a Groq-backed semantic signal, so it can still misclassify fluent human writing or highly templated prose.
+- The current prototype stores records in JSON files rather than a database, so it is intended for demos and coursework rather than production use.
+- The confidence model is deliberately conservative: disagreement or missing signals pushes the system into the Uncertain band.
+
+### AI usage
+- The semantic signal uses Groq's Llama 3.3 70B model to score phrasing and formulaic style.
+- The implementation and documentation were iterated with AI assistance, with the final logic reviewed and verified locally.
+
+---
+
 ## 7. Known limitations
 
 **Formal / academic human writing and non-native (ESL) English are the worst case, and it

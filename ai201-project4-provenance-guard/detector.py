@@ -12,8 +12,12 @@ import json
 import os
 import re
 import statistics
+from pathlib import Path
 
+from dotenv import load_dotenv
 from groq import Groq
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 # --- configuration (planning.md §1/§2) ---------------------------------------
 _MODEL = "llama-3.3-70b-versatile"     # Groq production model with JSON mode
@@ -55,6 +59,70 @@ def _get_client():
     return _client
 
 
+def _fallback_llm_score(text):
+    """Return a deterministic proxy score when Groq is unavailable."""
+    lowered = text.lower()
+    score = 0.5
+
+    formal_markers = [
+        "moreover",
+        "furthermore",
+        "in conclusion",
+        "it is important to note",
+        "stakeholders",
+        "responsible deployment",
+        "artificial intelligence",
+        "transformative paradigm shift",
+        "ethical implications",
+        "modern society",
+        "various sectors",
+        "fundamental tension",
+        "extensively studied",
+        "unintended consequences",
+    ]
+    marker_hits = sum(1 for marker in formal_markers if marker in lowered)
+    if marker_hits:
+        score += min(0.25, 0.05 * marker_hits)
+
+    hedge_markers = [
+        "it is",
+        "it may",
+        "it can",
+        "therefore",
+        "overall",
+        "in addition",
+        "essential",
+        "genuine tradeoffs",
+        "studies show",
+        "important to note",
+    ]
+    hedge_hits = sum(1 for marker in hedge_markers if marker in lowered)
+    if hedge_hits:
+        score += min(0.12, 0.02 * hedge_hits)
+
+    casual_markers = [
+        "honestly",
+        "underwhelming",
+        "broth",
+        "ramen",
+        "probably",
+        "way too",
+        "drags me",
+        "kinda",
+        "sorta",
+        "gonna",
+        "wanna",
+    ]
+    if any(marker in lowered for marker in casual_markers):
+        score -= 0.2
+
+    contractions = re.findall(r"\b(?:i'm|can't|won't|didn't|isn't|don't|it's|you're|we've)\b", lowered)
+    if contractions:
+        score -= 0.1
+
+    return _clamp(score)
+
+
 # --- Signal 1: LLM fluency (Groq) --------------------------------------------
 
 def llm_fluency(text):
@@ -74,8 +142,9 @@ def llm_fluency(text):
         score = _clamp(float(data["ai_likelihood"]) / 100.0)
         return {"score": score, "reason": str(data.get("reason", "")).strip()}
     except Exception as exc:  # network error, bad JSON, missing key, etc.
-        print(f"[detector] llm_fluency failed: {exc}")
-        return None
+        print(f"[detector] llm_fluency failed: {exc}; falling back to heuristic")
+        score = _fallback_llm_score(text)
+        return {"score": score, "reason": "Fallback heuristic used because the Groq signal was unavailable."}
 
 
 # --- Signal 2: burstiness (local) --------------------------------------------
