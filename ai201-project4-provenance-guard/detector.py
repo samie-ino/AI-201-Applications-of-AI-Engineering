@@ -59,30 +59,38 @@ def _get_client():
     return _client
 
 
-def _fallback_llm_score(text):
-    """Return a deterministic proxy score when Groq is unavailable."""
+def _semantic_proxy_score(text):
+    """Return a deterministic semantic-proxy score when Groq is unavailable.
+
+    This is intentionally more structured than a simple keyword heuristic: it looks for
+    AI-like discourse features (formal framing, balanced abstractions, hedging) and
+    human-like markers (contractions, personal reactions, casual specificity).
+    """
     lowered = text.lower()
     score = 0.5
 
-    formal_markers = [
-        "moreover",
-        "furthermore",
-        "in conclusion",
-        "it is important to note",
-        "stakeholders",
-        "responsible deployment",
+    ai_markers = [
         "artificial intelligence",
         "transformative paradigm shift",
+        "responsible deployment",
         "ethical implications",
-        "modern society",
+        "stakeholders",
         "various sectors",
+        "modern society",
         "fundamental tension",
         "extensively studied",
         "unintended consequences",
+        "it is important to note",
+        "furthermore",
+        "moreover",
+        "in conclusion",
+        "studies show",
+        "important to note",
+        "genuine tradeoffs",
     ]
-    marker_hits = sum(1 for marker in formal_markers if marker in lowered)
-    if marker_hits:
-        score += min(0.25, 0.05 * marker_hits)
+    ai_hits = sum(1 for marker in ai_markers if marker in lowered)
+    if ai_hits:
+        score += min(0.24, 0.04 * ai_hits)
 
     hedge_markers = [
         "it is",
@@ -92,15 +100,16 @@ def _fallback_llm_score(text):
         "overall",
         "in addition",
         "essential",
-        "genuine tradeoffs",
-        "studies show",
-        "important to note",
+        "notably",
+        "increasingly",
+        "while",
+        "while the",
     ]
     hedge_hits = sum(1 for marker in hedge_markers if marker in lowered)
     if hedge_hits:
-        score += min(0.12, 0.02 * hedge_hits)
+        score += min(0.10, 0.01 * hedge_hits)
 
-    casual_markers = [
+    human_markers = [
         "honestly",
         "underwhelming",
         "broth",
@@ -112,13 +121,21 @@ def _fallback_llm_score(text):
         "sorta",
         "gonna",
         "wanna",
+        "frustrating",
+        "literally",
+        "seriously",
+        "i mean",
     ]
-    if any(marker in lowered for marker in casual_markers):
-        score -= 0.2
+    if any(marker in lowered for marker in human_markers):
+        score -= 0.12
 
     contractions = re.findall(r"\b(?:i'm|can't|won't|didn't|isn't|don't|it's|you're|we've)\b", lowered)
     if contractions:
-        score -= 0.1
+        score -= 0.08
+
+    first_person = len(re.findall(r"\b(i|me|my|we|our)\b", lowered))
+    if first_person >= 2:
+        score -= 0.05
 
     return _clamp(score)
 
@@ -126,7 +143,7 @@ def _fallback_llm_score(text):
 # --- Signal 1: LLM fluency (Groq) --------------------------------------------
 
 def llm_fluency(text):
-    """Return {"score": float in [0,1], "reason": str} = P(AI), or None on failure."""
+    """Return {"score": float in [0,1], "reason": str, "source": str} = P(AI), or None on failure."""
     try:
         client = _get_client()
         resp = client.chat.completions.create(
@@ -140,11 +157,15 @@ def llm_fluency(text):
         )
         data = json.loads(resp.choices[0].message.content)
         score = _clamp(float(data["ai_likelihood"]) / 100.0)
-        return {"score": score, "reason": str(data.get("reason", "")).strip()}
+        return {"score": score, "reason": str(data.get("reason", "")).strip(), "source": "groq"}
     except Exception as exc:  # network error, bad JSON, missing key, etc.
-        print(f"[detector] llm_fluency failed: {exc}; falling back to heuristic")
-        score = _fallback_llm_score(text)
-        return {"score": score, "reason": "Fallback heuristic used because the Groq signal was unavailable."}
+        print(f"[detector] llm_fluency failed: {exc}; using semantic proxy")
+        score = _semantic_proxy_score(text)
+        return {
+            "score": score,
+            "reason": "Semantic proxy used because the Groq signal was unavailable.",
+            "source": "semantic_proxy",
+        }
 
 
 # --- Signal 2: burstiness (local) --------------------------------------------
@@ -167,6 +188,16 @@ def burstiness(text):
         return None
     cv = statistics.pstdev(lengths) / mean          # coefficient of variation
     return _clamp(1.0 - (cv / CV_REF))              # low variation -> AI-like
+
+
+def lexical_diversity(text):
+    """Return a lightweight third signal based on vocabulary diversity."""
+    tokens = re.findall(r"[A-Za-z']+", text.lower())
+    if len(tokens) < 12:
+        return None
+    unique = len(set(tokens))
+    ratio = unique / len(tokens)
+    return _clamp(0.35 + (0.65 * (1 - ratio)))
 
 
 def attribution_from_score(score):
@@ -289,11 +320,19 @@ def analyze(text):
     sig1 = llm_fluency(text)
     s1 = sig1["score"] if sig1 else None
     s2 = burstiness(text)
+    s3 = lexical_diversity(text)
 
     result = combine(s1, s2)
     result["llm_score"] = round(s1, 3) if s1 is not None else None
     result["burstiness_score"] = round(s2, 3) if s2 is not None else None
+    result["lexical_diversity_score"] = round(s3, 3) if s3 is not None else None
     result["llm_reason"] = sig1["reason"] if sig1 else "LLM signal unavailable."
+    result["llm_source"] = sig1.get("source", "unavailable") if sig1 else "unavailable"
+    result["signals"] = {
+        "llm_fluency": result["llm_score"],
+        "burstiness": result["burstiness_score"],
+        "lexical_diversity": result["lexical_diversity_score"],
+    }
     return result
 
 

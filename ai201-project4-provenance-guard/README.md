@@ -54,10 +54,12 @@ APPEAL:
 
 | Method & path | Accepts | Returns |
 |---|---|---|
-| `POST /submit` | `{ text, creator_id }` | `content_id`, `attribution`, `confidence`, `combined_score`, `label`, `signals{llm_fluency,burstiness}` |
+| `POST /submit` | `{ text, creator_id, media? }` | `content_id`, `attribution`, `confidence`, `combined_score`, `label`, `signals{llm_fluency,burstiness,lexical_diversity}`, `certificate_id` |
 | `POST /appeal` | `{ content_id, creator_reasoning }` | `appeal_id`, `status: under_review` |
 | `GET /appeals` | — | reviewer queue (appeals + snapshot of original decision) |
 | `POST /appeal/<appeal_id>/resolve` | `{ decision: upheld\|overturned, note }` | updated appeal status |
+| `GET /certificate/<content_id>` | path `content_id` | provenance certificate payload |
+| `GET /analytics` | — | aggregate submission/appeal stats |
 | `GET /log` | `?limit=` | recent structured audit entries |
 | `GET /health` | — | `{ status: "ok" }` |
 
@@ -84,6 +86,10 @@ information (see §3).
 ### Signal 2 — Burstiness (sentence-length variation, local)
 - **What it measures:** the coefficient of variation of sentence lengths,
   `CV = stdev/mean`, mapped `s2 = clamp(1 − CV/0.60, 0, 1)`. Low variation → AI-like.
+
+### Signal 3 — Lexical diversity (stretch)
+- **What it measures:** a lightweight vocabulary-diversity proxy based on distinct-word ratio.
+- **Why it helps:** repetitive or templated writing tends to have a lower unique-word ratio, which can signal AI-like prose.
 - **Why it separates human vs AI:** humans are "bursty" (short punchy sentence next to a
   long winding one); LLMs tend to even, uniform pacing.
 - **Blind spot:** blind to meaning and register. Formal/templated human writing and

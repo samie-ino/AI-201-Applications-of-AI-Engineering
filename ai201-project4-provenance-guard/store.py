@@ -69,6 +69,10 @@ def get_submission(content_id):
     return None
 
 
+def get_submissions():
+    return _load(_SUBMISSIONS_FILE)
+
+
 def update_submission(content_id, changes):
     """Apply `changes` to the matching submission record; return it (or None)."""
     subs = _load(_SUBMISSIONS_FILE)

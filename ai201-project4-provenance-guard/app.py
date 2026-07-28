@@ -12,6 +12,8 @@ import datetime
 import uuid
 from pathlib import Path
 
+from typing import Any
+
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_limiter import Limiter
@@ -44,8 +46,8 @@ def _now():
 def index():
     return jsonify(
         {
-            "status": "ok",
             "message": "Provenance Guard API. Use /submit, /appeal, /log, or /health.",
+            "status": "ok",
         }
     )
 
@@ -70,6 +72,7 @@ def submit():
     attribution = result["attribution"]
     label = detector.build_label(result)  # one of the three variants (planning.md §3)
 
+    certificate_id = f"cert-{content_id[:8]}"
     record = {
         "content_id": content_id,
         "creator_id": creator_id,
@@ -80,12 +83,16 @@ def submit():
         "combined_score": result["combined_score"],
         "llm_score": result["llm_score"],
         "burstiness_score": result["burstiness_score"],
+        "lexical_diversity_score": result.get("lexical_diversity_score"),
         "agreement": result["agreement"],
         "flags": result["flags"],
         "llm_reason": result["llm_reason"],
+        "llm_source": result.get("llm_source", "unavailable"),
         "label": label,
         "status": "classified",
         "appealed": False,
+        "certificate_id": certificate_id,
+        "media": data.get("media") or {},
     }
     store.save_submission(record)
 
@@ -119,10 +126,14 @@ def submit():
                 "signals": {
                     "llm_fluency": result["llm_score"],
                     "burstiness": result["burstiness_score"],
+                    "lexical_diversity": result.get("lexical_diversity_score"),
                 },
+                "media": record["media"],
+                "certificate_id": certificate_id,
                 "agreement": result["agreement"],
                 "flags": result["flags"],
                 "llm_reason": result["llm_reason"],
+                "llm_source": result.get("llm_source", "unavailable"),
                 "status": "classified",
             }
         ),
@@ -283,6 +294,43 @@ def resolve_appeal(appeal_id):
 def get_log():
     limit = request.args.get("limit", default=20, type=int)
     return jsonify({"entries": store.get_log(limit)})
+
+
+@app.get("/certificate/<content_id>")
+def certificate(content_id):
+    sub = store.get_submission(content_id)
+    if sub is None:
+        return jsonify({"error": "not_found", "detail": "unknown content_id"}), 404
+    return jsonify(
+        {
+            "content_id": sub["content_id"],
+            "certificate_id": sub.get("certificate_id"),
+            "attribution": sub["attribution"],
+            "confidence": sub["confidence"],
+            "combined_score": sub["combined_score"],
+            "label": sub["label"],
+            "timestamp": sub["timestamp"],
+        }
+    )
+
+
+@app.get("/analytics")
+def analytics():
+    submissions = store.get_submissions()
+    appeals = store.get_appeals()
+    by_attribution = {}
+    for sub in submissions:
+        by_attribution[sub.get("attribution", "uncertain")] = by_attribution.get(
+            sub.get("attribution", "uncertain"), 0
+        ) + 1
+    return jsonify(
+        {
+            "submissions_total": len(submissions),
+            "appeals_total": len(appeals),
+            "by_attribution": by_attribution,
+            "latest_submission": submissions[-1] if submissions else None,
+        }
+    )
 
 
 @app.get("/health")
