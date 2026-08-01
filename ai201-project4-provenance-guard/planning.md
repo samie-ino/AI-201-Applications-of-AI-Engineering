@@ -44,10 +44,11 @@ The system will output one of three distinct labels based on the final confidenc
 ---
 
 ## Architecture
+
 **Narrative:** 
 When text is submitted, it passes a rate limiter and enters the detection pipeline, where Signal 1 (Predictability) and Signal 2 (Burstiness) evaluate it independently. A scoring engine combines these results into a single confidence score, which a label generator maps to a plain-text transparency label. This data is recorded in the audit log and returned to the user. If the user appeals, the system updates the status to "Under Review" and appends the user's reasoning to the original log entry.
 
-**Flow Diagram:**
+**Submission Flow Diagram:**
 ```text
 [Client] 
    │ 
@@ -69,16 +70,19 @@ When text is submitted, it passes a rate limiter and enters the detection pipeli
    ▼
 [Client Response] (attribution, score, label)
 
+## AI Prompt:
+I am building the first part of a system called Provenance Guard. I need you to generate a Python Flask application skeleton and my first detection signal function.
 
-[Client]
-   │
-   ▼ (POST /appeal: submission_id, reasoning)
-[Appeals Workflow] 
-   │
-   ├─(1. updates status to "Under Review")
-   │
-   ▼ (status & reasoning)
-[Audit Logger] <──(appends appeal to original log entry)
-   │
-   ▼
-[Client Response] (status updated confirmation)
+Please use the following Architecture Narrative for context:
+When text is submitted, it passes a rate limiter and enters the detection pipeline, where Signal 1 (Predictability) and Signal 2 (Burstiness) evaluate it independently. A scoring engine combines these results into a single confidence score, which a label generator maps to a plain-text transparency label. This data is recorded in the audit log and returned to the user.
+
+Here is the spec for Signal 1:
+* What it measures: The statistical likelihood of the text's word choices based on standard language models (Perplexity).
+* Output: A normalized score from 0.0 (highly predictable/AI) to 1.0 (highly unpredictable/Human).
+
+Tasks:
+1. Write the function for Signal 1 (calculate_predictability_score) that takes raw text and returns a float between 0.0 and 1.0.
+2. Generate a basic Flask app skeleton with a POST /submit endpoint.
+3. The endpoint should accept JSON with text and creator_id.
+4. Wire Signal 1 into the endpoint and return a JSON response with a generated content_id, the signal_1_score, and placeholder values for the final attribution, confidence, and label.
+5. Create a structured JSON audit log that records timestamp, content ID, attribution result, and signal 1 score for every submission, and add a simple GET /log endpoint to view it.
