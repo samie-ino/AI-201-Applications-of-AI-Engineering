@@ -8,6 +8,7 @@ from typing import Any
 from groq import Groq
 
 from config import GROQ_API_KEY, LLM_MODEL
+from labels import generate_transparency_label
 
 
 class DetectionError(RuntimeError):
@@ -136,20 +137,4 @@ def combine_signal_scores(predictability_score: float, burstiness_score: float) 
             raise ValueError("signal scores must be numbers between 0.0 and 1.0")
 
     confidence = round(0.50 * predictability_score + 0.50 * burstiness_score, 2)
-    if confidence <= 0.35:
-        return {
-            "confidence": confidence,
-            "attribution": "likely_ai",
-            "label": "High-Confidence AI",
-        }
-    if confidence <= 0.65:
-        return {
-            "confidence": confidence,
-            "attribution": "uncertain",
-            "label": "Uncertain",
-        }
-    return {
-        "confidence": confidence,
-        "attribution": "likely_human",
-        "label": "High-Confidence Human",
-    }
+    return {"confidence": confidence, **generate_transparency_label(confidence)}
