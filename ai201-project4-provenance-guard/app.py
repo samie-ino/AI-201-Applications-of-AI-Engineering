@@ -5,7 +5,12 @@ from uuid import uuid4
 from flask import Flask, jsonify, request
 
 from audit import get_log, log_submission
-from detector import DetectionError, assess_predictability, attribution_from_predictability_score
+from detector import (
+    DetectionError,
+    assess_burstiness,
+    assess_predictability,
+    combine_signal_scores,
+)
 
 app = Flask(__name__)
 
@@ -18,7 +23,7 @@ def root():
 
 @app.post("/submit")
 def submit():
-    """Assess a submission with Signal 1 and return placeholder final results."""
+    """Assess a submission with both signals and return their combined result."""
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
@@ -30,19 +35,23 @@ def submit():
 
     try:
         signal_1 = assess_predictability(data["text"])
-        attribution = attribution_from_predictability_score(signal_1["predictability_score"])
+        signal_2 = assess_burstiness(data["text"])
+        combined = combine_signal_scores(
+            signal_1["predictability_score"], signal_2["burstiness_score"]
+        )
     except (DetectionError, ValueError) as error:
         return jsonify({"error": str(error)}), 503
 
     response = {
         "content_id": str(uuid4()),
         "creator_id": data["creator_id"],
-        "attribution": attribution,
+        "attribution": combined["attribution"],
         "signal_1": signal_1,
-        "confidence": 0.50,
-        "confidence_score": 0.50,
-        "label": "Uncertain",
-        "status": "received",
+        "signal_2": signal_2,
+        "confidence": combined["confidence"],
+        "confidence_score": combined["confidence"],
+        "label": combined["label"],
+        "status": "classified",
     }
     log_submission(
         {
@@ -51,6 +60,7 @@ def submit():
             "attribution": response["attribution"],
             "confidence": response["confidence"],
             "llm_score": signal_1["predictability_score"],
+            "burstiness_score": signal_2["burstiness_score"],
             "status": "classified",
         }
     )
