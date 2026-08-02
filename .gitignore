@@ -4,10 +4,16 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyc
 *.egg-info/
 .venv/
 venv/
 env/
+
+# App database (CineLog)
+*.db
+*.db-journal
+instance/
 
 # Jupyter
 .ipynb_checkpoints/
