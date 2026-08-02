@@ -17,6 +17,91 @@ A second judgment call AI could not settle: the correct "Listening Now" window v
 
 ---
 
+# Milestone 2 — Reproduce Your Chosen Bugs Before Fixing Anything
+
+## Reproduction checkpoint
+
+This milestone is intentionally about triggering the bugs from the app’s real runtime behavior and capturing that evidence before any code fix is made.
+
+### Chosen bugs
+- Issue #1 — listening streak resets on Sunday
+- Issue #2 — “Friends Listening Now” shows yesterday’s activity
+- Issue #5 — playlist retrieval drops the last song
+
+### How each bug was reproduced
+
+1. Issue #1 (`test_streak_increments_on_sunday`)
+   - Create a fresh `User` record in the app context.
+   - Call `update_listening_streak(user, saturday)` and verify the streak becomes `1`.
+   - Call `update_listening_streak(user, sunday)` with the next day’s timestamp.
+   - Expected reproduction symptom: the streak remains at `1` instead of increasing to `2`.
+
+2. Issue #2 (`test_yesterday_listen_does_not_appear`)
+   - Seed one friend relationship and one `Song` record.
+   - Insert a `ListeningEvent` for the friend at `timedelta(hours=20)` ago.
+   - Call `get_friends_listening_now(me.id)`.
+   - Expected reproduction symptom: the friend still appears in the feed even though the event is from yesterday, which shows the “Listening Now” filter is too wide.
+
+3. Issue #5 (`test_playlist_returns_all_songs` and `test_playlist_returns_songs_in_order`)
+   - Seed a playlist containing five songs with explicit positions `1` through `5`.
+   - Call `get_playlist_songs(playlist_id)`.
+   - Expected reproduction symptom: only four songs are returned, and the highest-position song is missing.
+
+### Verification discipline
+- No production code was changed during this milestone.
+- The reproductions were confirmed using the existing app/test harness and targeted regression scenarios rather than by guessing from the code alone.
+
+---
+
+# Milestone 1 — Fork, Set Up, and Orient Yourself
+
+## Checkpoint evidence
+
+- Working branch: `bugfix/mixtape` is the active branch for the repository.
+- Local app startup verified with the documented command:
+  - `FLASK_APP=app:create_app flask run --host 127.0.0.1 --port 5000`
+  - Result: Flask reported `Running on http://127.0.0.1:5000`.
+- App-root response was checked with `curl -I http://127.0.0.1:5000/` and the server responded on the expected port, confirming the app is running locally.
+- The project README was read before code inspection, and its file map plus the issue list were used to orient the codebase.
+
+## Codebase map
+
+- `app.py` is the Flask application factory. It creates the Flask app, loads the default SQLAlchemy config, registers the route blueprints for songs, playlists, users, and feed, and initializes the database tables.
+- `models.py` defines the relational data model: `User`, `Song`, `ListeningEvent`, `Rating`, `Playlist`, `Notification`, and the many-to-many join tables `friendships`, `song_tags`, and `playlist_entries`. The playlist join table stores an explicit `position`, which is important for playlist ordering semantics.
+- `routes/songs.py` is the thin HTTP layer for song-related endpoints. It parses request data, validates basic inputs, and forwards work into service functions such as `search_songs`, `get_song`, `rate_song`, and `record_listening_event`.
+- `routes/playlists.py` handles playlist creation and playlist song retrieval. It validates input and delegates most business logic to `services/playlist_service.py`.
+- `routes/users.py` handles user profile, streak, and notification endpoints. It delegates to the streak and notification logic in the service layer.
+- `routes/feed.py` exposes the “Friends Listening Now” and general activity feed endpoints. These are backed by `services/feed_service.py`.
+- `services/search_service.py` contains the query logic for song search, including how search terms are matched and which fields are returned.
+- `services/streak_service.py` owns listening-streak mutation logic. It records listening events and updates the user’s streak based on day-to-day continuity.
+- `services/notification_service.py` owns notification creation and retrieval. It creates notifications when a friend adds a song to a playlist or when a friend rates a song, and it also exposes helpers for reading and marking notifications as read.
+- `services/feed_service.py` is responsible for the “Listening Now” and broader activity feed logic, including the recent-window cutoff used to decide whether a friend is “currently active.”
+- `services/playlist_service.py` turns a playlist row set into the output for playlist endpoints and is responsible for preserving the explicit song order stored in the join table.
+
+## Example data flow
+
+A representative real flow in the app is:
+
+1. A user posts to `POST /songs/<song_id>/rate` in `routes/songs.py`.
+2. The route extracts `user_id` and `score`, validates the payload, and calls `rate_song()` in `services/notification_service.py`.
+3. `rate_song()` looks up the `Song` and `User`, checks for an existing `Rating`, updates or creates it, and saves the row to the database.
+4. The route returns the serialized rating object as JSON.
+
+Another important flow is the playlist notification path:
+
+1. A user adds a song to a playlist via `POST /playlists/<playlist_id>/songs`.
+2. The route delegates to the playlist service, which updates the playlist membership in the join table.
+3. `services/notification_service.py` then creates a `Notification` record for the original song sharer, using the playlist membership action as the trigger.
+
+## Patterns observed
+
+- The route layer is intentionally thin: routes parse HTTP input and format responses, while the service layer carries the business logic.
+- The model layer uses SQLAlchemy ORM objects plus association tables to represent many-to-many relations such as friendships, tags, and playlist membership.
+- Most service functions return plain Python dictionaries or ORM objects that are serialized into JSON responses by the routes.
+- The codebase is organized as a clean layered architecture: route concerns, model concerns, and service concerns are separated into distinct folders and modules.
+
+---
+
 # Mixtape Bug Hunt — Milestone 2 Reproduction Notes
 
 No production code changes were made during this milestone. The goal here was to reproduce each selected bug from the app’s real behavior before attempting any fixes.
