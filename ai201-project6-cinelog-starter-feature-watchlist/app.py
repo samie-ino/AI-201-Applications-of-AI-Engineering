@@ -35,5 +35,13 @@ def create_app(config=None):
 
 
 if __name__ == "__main__":
+    # Register this module under its import name too. Without this, code that
+    # does `from app import db` (models.py, etc.) re-imports this file as a
+    # second module named "app", creating a second SQLAlchemy() instance that
+    # never gets init_app()'d — every DB route then 500s with "not registered
+    # with this 'SQLAlchemy' instance".
+    import sys
+    sys.modules.setdefault("app", sys.modules["__main__"])
+
     app = create_app()
     app.run(debug=True)
