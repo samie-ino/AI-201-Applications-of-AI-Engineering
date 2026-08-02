@@ -1,70 +1,92 @@
-# AI-201 Applications of AI Engineering
+# CineLog
 
-This repository contains a collection of AI engineering labs and projects completed in the AI-201 course sequence. The folders range from starter applications and agent workflows to evaluators, safety tools, and full-stack app features.
+A community film tracking app. Users log films they've watched, rate them, and build collections.
 
-## Repository Overview
+This repository is the starting point for **Project 6: Simulated Code Review**.
 
-The workspace is organized into the following major components:
+---
 
-- `ai201-lab1-rulesbot-starter-main/` — Retrieval-augmented board game rules assistant.
-- `ai201-lab2-plantadvisor-starter-master/` — Plant-care conversational agent.
-- `ai201-lab3-podclassifier-starter-main/` — Few-shot podcast classifier.
-- `ai201-lab4-repairsafe-starter-main/` — Safety and audit-oriented response system.
-- `ai201-project1-unofficial-guide-starter/` — Retrieval-first campus guide assistant.
-- `ai201-project2-fitfindr-starter-main/` — Fitness-oriented assistant or recommendation-style application.
-- `ai201-project3-takemeter/` — Evaluation and modeling project centered on take-rate / recommendation analysis.
-- `ai201-project4-provenance-guard/` — AI-human provenance detector with scoring, labels, and audit logging.
-- `ai201-project5-mixtape-starter-copy/` — Music recommendation / playlist-oriented app starter.
-- `ai201-project6-cinelog-starter-feature-watchlist/` — Film collection and watchlist application with review-driven feature work.
-
-## What This Repo Demonstrates
-
-Across the projects, the repository covers a broad set of AI and software engineering skills, including:
-
-- Prompting and LLM-backed agent design
-- Retrieval-augmented generation (RAG)
-- Few-shot and evaluation workflows
-- Safety and auditing patterns
-- API and web app development
-- Data ingestion, embeddings, and search
-- Testing, review feedback, and feature iteration
-
-## Suggested Workflow
-
-1. Start with the lab or project README in the specific folder you want to work on.
-2. Review the specs or planning documents before changing code.
-3. Set up a Python virtual environment and install the local requirements for the target project.
-4. Run the app or tests from that folder as instructed in its own README.
-
-## General Environment Setup
-
-Most projects follow a standard Python setup:
+## Setup
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
+python app.py
 ```
 
-Some projects also rely on API keys or environment variables such as `GROQ_API_KEY` or similar configuration files.
+The app starts on `http://localhost:5000` and uses a local SQLite database (`cinelog.db`).
 
-## Notes
+---
 
-- Each subproject is self-contained and usually contains its own `README.md`, `requirements.txt`, and spec or test materials.
-- The root of this repository is intended as a high-level index rather than a single runnable app.
-- For project-specific setup, run commands inside the relevant subdirectory.
+## Project Structure
 
-## Recommended Reading Order
+```
+ai201-project6-cinelog-starter/
+├── app.py                     # Flask app factory
+├── models.py                  # SQLAlchemy models
+├── services/
+│   └── collection_service.py  # Business logic for collections
+├── routes/
+│   ├── films.py               # Film browsing endpoints
+│   └── collection.py          # Collection endpoints
+├── tests/
+│   └── test_collection.py     # Tests for collection service
+├── CONTRIBUTING.md            # Commit conventions and PR guidelines
+└── requirements.txt
+```
 
-If you are browsing the repository top to bottom, a practical order is:
+---
 
-1. `ai201-lab1-rulesbot-starter-main/`
-2. `ai201-lab2-plantadvisor-starter-master/`
-3. `ai201-lab3-podclassifier-starter-main/`
-4. `ai201-lab4-repairsafe-starter-main/`
-5. `ai201-project1-unofficial-guide-starter/`
-6. `ai201-project2-fitfindr-starter-main/`
-7. `ai201-project3-takemeter/`
-8. `ai201-project4-provenance-guard/`
-9. `ai201-project5-mixtape-starter-copy/`
-10. `ai201-project6-cinelog-starter-feature-watchlist/`
+## API Overview
+
+### Films
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/films/` | List all films (supports `?genre=` and `?year=` filters) |
+| GET | `/films/<film_id>` | Get a single film by UUID |
+
+### Collection
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/collection/<user_id>` | Get a user's collection (newest first) |
+| POST | `/collection/<user_id>/add` | Add a film to the collection |
+| DELETE | `/collection/<user_id>/remove` | Remove a film from the collection |
+
+---
+
+## Data Models
+
+**Film** — A film in the catalog. IDs are UUIDs.
+
+**User** — A registered user. IDs are UUIDs.
+
+**CollectionEntry** — Links a user to a film they've watched. Stores rating and date added. A user can only have one entry per film.
+
+---
+
+## Naming Conventions
+
+Service functions follow a `verb_to_noun` pattern. See `CONTRIBUTING.md` for full details.
+
+---
+
+## Running Tests
+
+```bash
+pytest tests/
+```
+
+---
+
+## Your Task
+
+You're working on the `feature/watchlist` branch, which adds a watchlist feature to CineLog. A maintainer (`@dev-lead`) has reviewed your PR and left six comments. Your job is to address all six.
+
+Read `CONTRIBUTING.md` before touching any code. Then check out the `feature/watchlist` branch:
+
+```bash
+git checkout feature/watchlist
+```
+
+The open PR and the maintainer's review comments are filed on GitHub. Work through each comment and document your responses in your **PR Response Doc**.
