@@ -39,13 +39,13 @@ None at the moment.
 ### Check-in 1 (mid-week)
 
 **Current progress:**
-I reproduced the issue with a focused regression test, then implemented the parser and metadata-path change so the repo analysis now surfaces a `contribution_streak` value when `contribution_history` is available. The work is confined to the repository metadata analysis path and the targeted regression coverage for that contract change.
+I reproduced the issue with a focused regression test and then implemented the parser-level change so repo analysis now exposes a `contribution_streak` value when contribution-history data is present. The work stayed scoped to the repository metadata analysis path and its targeted regression coverage.
 
 **Next steps:**
-I am finalizing the PR summary, recording the verification evidence, and documenting the repo-wide baseline failures that were observed in the self-check commands so the submission clearly shows that this issue-specific change did not introduce new breakage.
+I am wrapping up the PR summary, preserving the verification evidence, and documenting the repo-wide baseline failures observed during self-review so the submission clearly shows that this issue-specific change did not introduce new breakage.
 
 **Blockers:**
-None for the targeted issue. The repository still has unrelated baseline lint and test failures in other areas, so the self-checks are not fully green even though the issue-specific regression coverage is passing.
+None for the targeted issue. The repository still shows unrelated baseline lint and test failures in other areas, so the full self-check commands are not completely green even though the contribution-streak regression path is now passing.
 
 ---
 
@@ -56,7 +56,7 @@ None for the targeted issue. The repository still has unrelated baseline lint an
 **Branch:** feat/52-contribution-streak
 
 **What you built:**
-This fix adds a `contribution_streak` field to the repo-analysis metadata path by computing the longest consecutive-day streak from GitHub contribution-history data. The analyzer now keeps that signal in the output metadata so downstream GitHub analysis can consume it cleanly.
+This fix adds a `contribution_streak` field to the repo-analysis metadata path by computing the longest consecutive-day streak from GitHub contribution-history data. The analyzer now carries that signal through its output metadata so downstream GitHub analysis can consume it cleanly.
 
 **Tests added or updated:**
 I touched [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) to lock in the regression scenario and confirm that the metadata now exposes the expected streak value. I also validated the existing contribution-streak coverage in [ai201-pathreview/tests/unit/test_github_tool.py](ai201-pathreview/tests/unit/test_github_tool.py).
@@ -65,7 +65,7 @@ I touched [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/t
 - [ ] `make check` passes
 - [ ] `make test-unit` passes
 
-Verification note: I ran both commands for the repository and confirmed the issue-specific regression tests pass, but the repo still reports unrelated pre-existing lint/test failures outside the scope of this contribution. The PR submission therefore documents the issue-specific behavior change without claiming the entire codebase is clean.
+Verification note: I ran both repo-wide self-check commands and confirmed the targeted issue regression path passes, but the repository still reports unrelated baseline failures outside the scope of this contribution. This submission is therefore documented as a scoped fix for the `contribution_streak` issue rather than a claim that the entire codebase is clean.
 
 **Draft PR feedback received from:** none
 
