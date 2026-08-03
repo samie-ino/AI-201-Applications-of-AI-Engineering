@@ -11,9 +11,12 @@
 **Problem summary:**
 The PathReview repository analysis pipeline exposes repository metadata such as stars, tests, and last commit date, but it does not surface a contribution-streak metric when contribution-history data is available. That leaves a useful portfolio signal missing from repo analysis and makes the GitHub analysis less informative for contribution tracking. A successful fix will compute the longest consecutive-day streak and expose it in the repo metadata that downstream tools can use.
 
+**Selection notes / "Is this right for me?" reasoning:**
+This issue is a good fit for a first contribution because the scope is narrow and testable: it affects the repository metadata parser and a small slice of GitHub analysis behavior, not the whole UI or database workflow. The expected change is well defined by the regression test and by the existing `contribution_streak` data flow in the GitHub tool path, so the work stays focused on one clear contract change. A successful solution only needs to wire the metadata through the analyzer and keep the existing formatting and test expectations intact.
+
 **Branch name:** feat/52-contribution-streak
 
-**Setup confirmation:** [ ] App runs locally at localhost:5173
+**Setup confirmation:** [x] App runs locally at localhost:5173
 
 **Cohort ledger:** [ ] Issue added to cohort ledger
 
