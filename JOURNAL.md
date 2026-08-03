@@ -34,3 +34,34 @@ I reproduced the issue by adding a regression test in [ai201-pathreview/tests/un
 **Blockers or open questions:**
 None at the moment.
 
+## Week 9 — Solution building & PR submission
+
+### Check-in 1 (mid-week)
+
+**Current progress:**
+I reproduced the issue with a focused regression test, then implemented the parser and metadata-path change so the repo analysis now exposes a `contribution_streak` value when `contribution_history` is available. The work is confined to the repository metadata analysis path and its regression coverage.
+
+**Next steps:**
+I am documenting the self-review evidence, verifying the issue-related tests that prove the behavior, and preparing the PR summary around the repo-wide baseline failures that are unrelated to this fix.
+
+**Blockers:**
+None for the targeted issue. The repository still has unrelated baseline lint/test violations that show up in `make check` and `make test-unit` outside the scope of this change.
+
+---
+
+### Check-in 2 (end of week)
+
+**PR link:** https://github.com/samie-ino/AI-201-Applications-of-AI-Engineering/pull/5
+
+**Branch:** feat/52-contribution-streak
+
+**What you built:**
+This fix adds a `contribution_streak` field to the repo-analysis metadata path by computing the longest consecutive-day streak from GitHub contribution-history data. The analyzer now keeps that signal in the output metadata so downstream GitHub analysis can consume it cleanly.
+
+**Tests added or updated:**
+I touched [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) to guard the regression case and confirm the metadata now includes the expected streak value. I also validated the existing contribution-streak coverage in [ai201-pathreview/tests/unit/test_github_tool.py](ai201-pathreview/tests/unit/test_github_tool.py).
+
+**Self-review confirmation:** [ ] make check passes  [ ] make test-unit passes
+
+**Draft PR feedback received from:** none
+
