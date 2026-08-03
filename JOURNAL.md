@@ -39,13 +39,13 @@ None at the moment.
 ### Check-in 1 (mid-week)
 
 **Current progress:**
-I reproduced the issue with a focused regression test, then implemented the parser and metadata-path change so the repo analysis now exposes a `contribution_streak` value when `contribution_history` is available. The work is confined to the repository metadata analysis path and its regression coverage.
+I reproduced the issue with a focused regression test, then implemented the parser and metadata-path change so the repo analysis now surfaces a `contribution_streak` value when `contribution_history` is available. The work is confined to the repository metadata analysis path and the targeted regression coverage for that contract change.
 
 **Next steps:**
-I am documenting the self-review evidence, verifying the issue-related tests that prove the behavior, and preparing the PR summary around the repo-wide baseline failures that are unrelated to this fix.
+I am finalizing the PR summary, recording the verification evidence, and documenting the repo-wide baseline failures that were observed in the self-check commands so the submission clearly shows that this issue-specific change did not introduce new breakage.
 
 **Blockers:**
-None for the targeted issue. The repository still has unrelated baseline lint/test violations that show up in `make check` and `make test-unit` outside the scope of this change.
+None for the targeted issue. The repository still has unrelated baseline lint and test failures in other areas, so the self-checks are not fully green even though the issue-specific regression coverage is passing.
 
 ---
 
@@ -59,9 +59,13 @@ None for the targeted issue. The repository still has unrelated baseline lint/te
 This fix adds a `contribution_streak` field to the repo-analysis metadata path by computing the longest consecutive-day streak from GitHub contribution-history data. The analyzer now keeps that signal in the output metadata so downstream GitHub analysis can consume it cleanly.
 
 **Tests added or updated:**
-I touched [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) to guard the regression case and confirm the metadata now includes the expected streak value. I also validated the existing contribution-streak coverage in [ai201-pathreview/tests/unit/test_github_tool.py](ai201-pathreview/tests/unit/test_github_tool.py).
+I touched [ai201-pathreview/tests/unit/test_repo_analyzer.py](ai201-pathreview/tests/unit/test_repo_analyzer.py) to lock in the regression scenario and confirm that the metadata now exposes the expected streak value. I also validated the existing contribution-streak coverage in [ai201-pathreview/tests/unit/test_github_tool.py](ai201-pathreview/tests/unit/test_github_tool.py).
 
-**Self-review confirmation:** [ ] make check passes  [ ] make test-unit passes
+**Self-review confirmation:**
+- [ ] `make check` passes
+- [ ] `make test-unit` passes
+
+Verification note: I ran both commands for the repository and confirmed the issue-specific regression tests pass, but the repo still reports unrelated pre-existing lint/test failures outside the scope of this contribution. The PR submission therefore documents the issue-specific behavior change without claiming the entire codebase is clean.
 
 **Draft PR feedback received from:** none
 
