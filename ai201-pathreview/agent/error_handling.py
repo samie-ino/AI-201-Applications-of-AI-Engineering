@@ -2,6 +2,8 @@
 
 import functools
 import time
+from collections.abc import Callable
+from typing import Any
 
 import structlog
 
@@ -10,7 +12,7 @@ logger = structlog.get_logger()
 
 def retry_with_backoff(
     max_retries: int = 3, backoff_factor: float = 2.0, exceptions: tuple = (Exception,)
-):
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator for retry logic with exponential backoff.
 
     Args:
@@ -22,9 +24,9 @@ def retry_with_backoff(
         Decorated function
     """
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             attempt = 0
             last_exception = None
 
@@ -69,7 +71,7 @@ class RetryContext:
 
     def __init__(
         self, max_retries: int = 3, backoff_factor: float = 2.0, exceptions: tuple = (Exception,)
-    ):
+    ) -> None:
         """Initialize retry context.
 
         Args:
@@ -83,11 +85,11 @@ class RetryContext:
         self.attempt = 0
         self.last_exception = None
 
-    def __enter__(self):
+    def __enter__(self) -> "RetryContext":
         """Enter context."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
         """Exit context and handle retries."""
         if exc_type is None:
             return False

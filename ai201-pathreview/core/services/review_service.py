@@ -4,6 +4,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.review import FeedbackSection
 from core.models.ingested_source import IngestedSource
@@ -14,7 +15,7 @@ log = structlog.get_logger()
 
 
 async def create_review(
-    db,
+    db: AsyncSession,
     profile_id: UUID,
     user_id: str,
 ) -> Review:
@@ -34,7 +35,7 @@ async def create_review(
 
 
 async def get_review(
-    db,
+    db: AsyncSession,
     review_id: UUID,
     user_id: str,
 ) -> Review | None:
@@ -45,11 +46,12 @@ async def get_review(
         select(Review).join(Profile).where(and_(Review.id == review_id, Profile.user_id == user_id))
     )
     result = await db.execute(stmt)
-    return result.scalars().first()
+    review: Review | None = result.scalars().first()
+    return review
 
 
 async def list_reviews(
-    db,
+    db: AsyncSession,
     user_id: str,
     page: int = 1,
     page_size: int = 20,
@@ -75,14 +77,14 @@ async def list_reviews(
         .limit(page_size)
     )
     result = await db.execute(stmt)
-    reviews = result.scalars().all()
+    reviews = list(result.scalars().all())
 
     return reviews, total
 
 
 async def process_review(
-    db,
-    review_id: UUID,
+    db: AsyncSession,
+    review_id: str,
     profile_id: UUID,
 ) -> None:
     """
@@ -167,7 +169,7 @@ async def process_review(
         ]
 
         review.status = "complete"
-        review.sections = [s.model_dump() for s in sections]
+        review.sections = [s.model_dump() for s in sections]  # type: ignore[assignment]
         review.overall_score = rag_output.get("overall_score", None)
         review.updated_at = datetime.utcnow()
 
@@ -200,7 +202,7 @@ async def _run_ingestion_pipeline(db, profile: Profile) -> list[dict]:
     Run ingestion pipeline to extract data from profile sources.
     Returns list of ingested source data.
     """
-    sources = []
+    sources: list[dict] = []
 
     # Ingest from GitHub if available
     if profile.github_username:

@@ -69,7 +69,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     MODEL = "text-embedding-3-small"
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize OpenAI client."""
         try:
             from openai import OpenAI

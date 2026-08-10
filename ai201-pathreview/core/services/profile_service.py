@@ -2,6 +2,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.profile import ProfileCreate, ProfileUpdate
 from core.models.ingested_source import IngestedSource
@@ -12,7 +13,7 @@ log = structlog.get_logger()
 
 
 async def create_profile(
-    db,
+    db: AsyncSession,
     user_id: str,
     data: ProfileCreate,
     resume_filename: str | None = None,
@@ -35,7 +36,7 @@ async def create_profile(
 
 
 async def get_profile(
-    db,
+    db: AsyncSession,
     profile_id: UUID,
     user_id: str,
 ) -> Profile | None:
@@ -44,11 +45,12 @@ async def get_profile(
     """
     stmt = select(Profile).where((Profile.id == profile_id) & (Profile.user_id == user_id))
     result = await db.execute(stmt)
-    return result.scalars().first()
+    profile: Profile | None = result.scalars().first()
+    return profile
 
 
 async def update_profile(
-    db,
+    db: AsyncSession,
     profile_id: UUID,
     user_id: str,
     data: ProfileUpdate,
@@ -72,7 +74,7 @@ async def update_profile(
 
 
 async def delete_profile(
-    db,
+    db: AsyncSession,
     profile_id: UUID,
     user_id: str,
 ) -> bool:

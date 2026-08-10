@@ -20,7 +20,7 @@ class SafetyMonitor:
         "rate_limited",
     }
 
-    def __init__(self, redis_client: redis.Redis):
+    def __init__(self, redis_client: redis.Redis) -> None:
         """Initialize safety monitor.
 
         Args:

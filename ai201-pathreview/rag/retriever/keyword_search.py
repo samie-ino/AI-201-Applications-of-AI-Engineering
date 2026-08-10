@@ -9,10 +9,10 @@ logger = structlog.get_logger()
 class KeywordSearcher:
     """BM25-based keyword retrieval for sparse search."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize keyword searcher."""
         self.bm25 = None
-        self.chunks = []
+        self.chunks: list[dict] = []
 
     def index(self, chunks: list[dict]) -> None:
         """Build BM25 index from chunks.

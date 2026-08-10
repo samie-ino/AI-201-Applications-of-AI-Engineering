@@ -17,7 +17,7 @@ class SemanticChunker(BaseChunker):
     OVERLAP_TOKENS = 50
     MAX_TOKENS = 800
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the chunker with tiktoken encoder."""
         self.encoder = tiktoken.get_encoding("cl100k_base")
 

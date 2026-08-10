@@ -11,7 +11,7 @@ logger = structlog.get_logger()
 class RateLimiter:
     """Rate limiter using Redis sorted sets for rolling window."""
 
-    def __init__(self, redis_client: redis.Redis):
+    def __init__(self, redis_client: redis.Redis) -> None:
         """Initialize rate limiter.
 
         Args:

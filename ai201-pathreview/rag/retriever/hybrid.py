@@ -17,7 +17,7 @@ class HybridRetriever:
         keyword_searcher: KeywordSearcher,
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
-    ):
+    ) -> None:
         """Initialize hybrid retriever.
 
         Args:

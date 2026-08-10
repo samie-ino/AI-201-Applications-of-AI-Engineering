@@ -14,7 +14,7 @@ class GitHubTool(BaseTool):
     name = "github_tool"
     description = "Fetch repository metadata from GitHub"
 
-    def __init__(self, api_token: str | None = None):
+    def __init__(self, api_token: str | None = None) -> None:
         """Initialize GitHub tool.
 
         Args:

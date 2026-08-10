@@ -11,7 +11,7 @@ logger = structlog.get_logger()
 class SessionStore:
     """Store and retrieve session data from Redis."""
 
-    def __init__(self, redis_client: redis.Redis):
+    def __init__(self, redis_client: redis.Redis) -> None:
         """Initialize session store.
 
         Args:
@@ -36,7 +36,7 @@ class SessionStore:
                 logger.info("session_not_found", session_id=session_id)
                 return None
 
-            parsed = json.loads(data)
+            parsed: dict = json.loads(data)
             logger.info("session_retrieved", session_id=session_id)
             return parsed
 

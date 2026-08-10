@@ -22,7 +22,7 @@ class EvalResult:
 class EvalSuite:
     """Run evaluation on retrieval and generation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize evaluation suite."""
         self.relevance_scorer = RelevanceScorer()
         self.faithfulness_checker = FaithfulnessChecker()

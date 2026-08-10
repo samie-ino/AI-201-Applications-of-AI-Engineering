@@ -41,7 +41,7 @@ class MarketAnalyzer(BaseTool):
         "GCP": 0.78,
     }
 
-    def __init__(self, redis_client: redis.Redis | None = None):
+    def __init__(self, redis_client: redis.Redis | None = None) -> None:
         """Initialize market analyzer.
 
         Args:

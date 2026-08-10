@@ -6,7 +6,7 @@ from .structural_chunker import StructuralChunker
 class StrategySelector:
     """Select and apply appropriate chunking strategy based on document type."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize chunkers."""
         self.semantic_chunker = SemanticChunker()
         self.structural_chunker = StructuralChunker()

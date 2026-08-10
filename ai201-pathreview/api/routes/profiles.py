@@ -4,6 +4,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware.auth import get_current_user
 from api.schemas.profile import ProfileCreate, ProfileResponse, ProfileUpdate
@@ -27,8 +28,8 @@ async def create_profile_endpoint(
     portfolio_url: str = Form(default=None),
     resume_file: UploadFile = File(default=None),
     current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
-):
+    db: AsyncSession = Depends(get_db),
+) -> ProfileResponse:
     """
     Create a new profile with optional resume upload.
     Resume must be PDF or Markdown.
@@ -40,7 +41,10 @@ async def create_profile_endpoint(
 
         if resume_file:
             # Check file type
-            file_mime = resume_file.content_type or mimetypes.guess_type(resume_file.filename)[0]
+            # An upload may carry neither a content type nor a filename.
+            file_mime = resume_file.content_type
+            if not file_mime and resume_file.filename:
+                file_mime = mimetypes.guess_type(resume_file.filename)[0]
 
             if file_mime not in ["application/pdf", "text/markdown", "text/plain"]:
                 log.warning(
@@ -113,8 +117,8 @@ async def create_profile_endpoint(
 async def get_profile_endpoint(
     profile_id: UUID,
     current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
-):
+    db: AsyncSession = Depends(get_db),
+) -> ProfileResponse:
     """
     Get a profile by ID.
     Returns 404 if not found or not owned by current user.
@@ -150,8 +154,8 @@ async def update_profile_endpoint(
     profile_id: UUID,
     data: ProfileUpdate,
     current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
-):
+    db: AsyncSession = Depends(get_db),
+) -> ProfileResponse:
     """
     Update a profile.
     Returns 404 if not found or not owned by current user.
@@ -198,8 +202,8 @@ async def update_profile_endpoint(
 async def delete_profile_endpoint(
     profile_id: UUID,
     current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
-):
+    db: AsyncSession = Depends(get_db),
+) -> None:
     """
     Delete a profile and cascade delete reviews and ingested sources.
     Returns 404 if not found or not owned by current user.

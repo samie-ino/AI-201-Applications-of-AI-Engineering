@@ -25,7 +25,7 @@ class ReviewConfig:
 class ReviewGenerator:
     """Generate reviews using LLM (OpenAI API or OpenRouter)."""
 
-    def __init__(self, config: ReviewConfig):
+    def __init__(self, config: ReviewConfig) -> None:
         """Initialize review generator.
 
         Args:
@@ -70,7 +70,8 @@ class ReviewGenerator:
             max_tokens=self.config.max_tokens,
         )
 
-        content = response.choices[0].message.content
+        # The API may return a message with no content at all.
+        content = response.choices[0].message.content or ""
 
         # Parse output
         sections = parse_review_output(content)

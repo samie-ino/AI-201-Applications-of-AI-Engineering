@@ -16,7 +16,7 @@ class StructuralChunker(BaseChunker):
 
     SECTION_TOKEN_LIMIT = 800
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the chunker."""
         self.encoder = tiktoken.get_encoding("cl100k_base")
         self.semantic_chunker = SemanticChunker()

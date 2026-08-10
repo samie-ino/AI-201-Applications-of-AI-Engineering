@@ -31,7 +31,7 @@ class IngestionPipeline:
         vector_db,
         db_session,
         embedding_provider: EmbeddingProvider,
-    ):
+    ) -> None:
         """
         Initialize the ingestion pipeline.
 

@@ -11,7 +11,7 @@ class BatchEmbeddingProcessor:
 
     BATCH_SIZE = 100
 
-    def __init__(self, embedding_provider: EmbeddingProvider, vector_db):
+    def __init__(self, embedding_provider: EmbeddingProvider, vector_db) -> None:
         """
         Initialize the batch processor.
 

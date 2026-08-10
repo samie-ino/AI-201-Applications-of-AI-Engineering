@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from typing import Any, cast
 
 import structlog
 
@@ -12,7 +13,7 @@ def configure_logging() -> None:
     """Configure structlog with appropriate renderers based on environment."""
     if settings.app_env == "production":
         # JSON renderer for production
-        processors = [
+        processors: list[Any] = [
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
@@ -61,4 +62,4 @@ def get_logger(name: str) -> structlog.BoundLogger:
     Returns:
         Bound logger instance with context
     """
-    return structlog.get_logger(name)
+    return cast("structlog.BoundLogger", structlog.get_logger(name))

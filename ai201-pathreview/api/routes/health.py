@@ -3,6 +3,8 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 
@@ -12,7 +14,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 
 @router.get("")
-async def health_check(db=Depends(get_db)):
+async def health_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """
     Check health of PostgreSQL, Redis, and Vector DB.
     Returns 200 if all healthy, 503 if any dependency is down.
@@ -30,7 +32,8 @@ async def health_check(db=Depends(get_db)):
 
     try:
         # Check PostgreSQL
-        await db.execute("SELECT 1")
+        # SQLAlchemy 2.0 requires an executable construct, not a raw string.
+        await db.execute(text("SELECT 1"))
         health_status["dependencies"]["postgres"] = "healthy"
         log.debug("postgres_health_check_passed")
     except Exception as exc:

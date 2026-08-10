@@ -9,7 +9,7 @@ logger = structlog.get_logger()
 class VectorStore:
     """Wrapper around ChromaDB for vector similarity search."""
 
-    def __init__(self, persist_dir: str = ".chromadb"):
+    def __init__(self, persist_dir: str = ".chromadb") -> None:
         """Initialize ChromaDB client.
 
         Args:

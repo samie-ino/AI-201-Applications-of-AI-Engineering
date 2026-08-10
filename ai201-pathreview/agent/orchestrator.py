@@ -16,7 +16,7 @@ class Orchestrator:
 
     def __init__(
         self, tools: dict, session_store: SessionStore | None = None, tool_timeout: float = 30.0
-    ):
+    ) -> None:
         """Initialize orchestrator.
 
         Args:
