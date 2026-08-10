@@ -69,3 +69,9 @@ Verification note: I ran both repo-wide self-check commands and confirmed the ta
 
 **Draft PR feedback received from:** none
 
+## Week 10 — Reflection & reviewer engagement
+
+**Reflection document:** [REFLECTION.md](REFLECTION.md)
+
+No reviewer feedback or review comments were received before this check-in, so there were no reviewer responses to document. The reflection records the implementation, testing, and pull request process lessons from this contribution, including the importance of checking the PR changed-file list when the base branch has diverged.
+
