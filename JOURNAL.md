@@ -69,9 +69,39 @@ Verification note: I ran both repo-wide self-check commands and confirmed the ta
 
 **Draft PR feedback received from:** none
 
-## Week 10 — Reflection & reviewer engagement
+## Week 10 — Iteration & reflection
 
-**Reflection document:** [REFLECTION.md](REFLECTION.md)
+### Reviewer feedback
 
-No reviewer feedback or review comments were received before this check-in, so there were no reviewer responses to document. The reflection records the implementation, testing, and pull request process lessons from this contribution, including the importance of checking the PR changed-file list when the base branch has diverged.
+**Feedback received:** [ ] Yes  [x] No — still awaiting review
+
+**Summary of feedback:**
+No reviewer feedback was provided in Summer 2026. The pull request remained open without review comments as of August 10, 2026.
+
+**How you responded:**
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+The hardest part was separating issue-specific behavior from the repository's broader health. The contribution-streak regression was narrow and its focused tests passed, but the initial full-suite run reported 53 failures and `make check` stopped at 183 Ruff errors. Investigating those failures showed that many were real defects hidden by broad exception handlers, including broken PDF parsing, an always-unhealthy health check, an uninitialized BM25 keyword index, and incorrect primary-language detection. I had expected to finish once the targeted regression passed; instead, I had to establish a baseline, identify which failures were inherited, and decide how far remediation should go without losing the original scope.
+
+**What did you learn about working in a large codebase?**
+Contributing to an existing codebase requires understanding contracts and boundaries before changing implementation. For this issue, the repository analyzer was the right place to normalize contribution-history data for downstream consumers, and focused edge-case tests clarified behavior for empty histories, gaps, duplicate dates, alternate fields, and explicit pre-computed values. I also learned that a technically mergeable branch is not necessarily easy to review: when the base branch has diverged, the complete changed-file list matters as much as the conflict status. In someone else's production code, tests, configuration, dependency declarations, and history are all part of the feature's context.
+
+**How did AI tools help — and where did they fall short?**
+AI assistance was most useful for quickly locating the analyzer, tracing the `contribution_streak` data flow, drafting focused regression cases, and identifying nearby implementation and test boundaries. It also helped organize the failure investigation once the full suite exposed problems outside the original issue. It fell short when broad failures looked like baseline noise: I still had to run the commands, inspect tracebacks, verify dependency and configuration facts, and make the judgment that several failures represented real application bugs. AI could suggest likely fixes, but it could not replace checking the actual branch diff, confirming the environment, or deciding which changes were justified.
+
+**What would you do differently if you started over?**
+I would capture the exact baseline from `make check`, `make test-unit`, and the full suite before making any edits, then record which failures belong to the issue. I would also inspect the pull request's changed-file list and base-branch relationship earlier instead of treating mergeability as sufficient evidence that the PR was clean. For implementation, I would define the edge-case contract before writing the parser change and keep the issue-specific test separate from any broader repository remediation. That process would make the scope, regression evidence, and remaining technical debt easier for a reviewer to evaluate.
+
+**What are you most proud of from this module?**
+I am most proud that I did not stop at a passing happy-path regression test. I made the contribution-streak behavior explicit, added coverage for the important data-shape edge cases, and followed the broader failures far enough to distinguish inherited problems from regressions. The final verification showed 435 tests passing with no failures and Ruff clean, while the remaining mypy issues were documented as bounded annotation work rather than hidden.
+
+### Deliverables Checklist
+
+- **Reviewer feedback documented in `JOURNAL.md`:** [x] No feedback received in Summer 2026; no reviewer response was required
+- **Reflection completed in `JOURNAL.md`:** [x] All five reflection prompts answered
+- **Branch URL submitted via course portal:** [ ] https://github.com/samie-ino/AI-201-Applications-of-AI-Engineering/tree/feat/52-contribution-streak
 
