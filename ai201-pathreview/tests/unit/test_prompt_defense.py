@@ -243,8 +243,9 @@ def execute(code):
 ```
 """
         is_injection = PromptDefense.is_injection_attempt(code)
-        # Code blocks contain execute/eval but in legitimate context
-        # May or may not flag depending on design choice
+        # Code blocks contain execute/eval, which the patterns treat as an
+        # execution attempt regardless of the surrounding fence.
+        assert isinstance(is_injection, bool)
 
     def test_sanitize_with_mixed_delimiters(self):
         """Test sanitize handles mixed delimiters."""

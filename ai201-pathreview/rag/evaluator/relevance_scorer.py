@@ -8,6 +8,11 @@ logger = structlog.get_logger()
 class RelevanceScorer:
     """Score relevance of retrieved chunks to query."""
 
+    # How much a chunk's own keyword density counts against query coverage.
+    # Coverage dominates, but a chunk that is mostly unrelated filler should
+    # not score as highly as a tightly matching one.
+    DENSITY_WEIGHT = 0.25
+
     def score(self, query: str, chunks: list[dict]) -> float:
         """Score retrieval relevance.
 
@@ -36,16 +41,23 @@ class RelevanceScorer:
                 relevances.append(0.0)
                 continue
 
-            # Keyword overlap as relevance signal
+            # Keyword overlap as relevance signal, discounted by how much of
+            # the chunk is unrelated to the query.
             overlap = len(query_tokens & chunk_tokens)
-            relevance = overlap / len(query_tokens)
+            coverage = overlap / len(query_tokens)
+            density = overlap / len(chunk_tokens)
+            relevance = coverage * (1 - self.DENSITY_WEIGHT) + density * self.DENSITY_WEIGHT
             relevances.append(relevance)
 
         # Return average relevance
         avg_relevance = sum(relevances) / len(relevances)
 
-        logger.info("relevance_scored", query_len=len(query_tokens),
-                   chunks_count=len(chunks), avg_score=avg_relevance)
+        logger.info(
+            "relevance_scored",
+            query_len=len(query_tokens),
+            chunks_count=len(chunks),
+            avg_score=avg_relevance,
+        )
 
         return min(avg_relevance, 1.0)
 

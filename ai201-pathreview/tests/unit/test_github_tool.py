@@ -1,12 +1,13 @@
 import sys
 import types
+
 import pytest
 
 # Provide a lightweight stub for structlog so tests don't need external deps
 structlog_stub = types.SimpleNamespace(get_logger=lambda *a, **k: lambda *aa, **kk: None)
-sys.modules.setdefault("structlog", structlog_stub)
+sys.modules.setdefault("structlog", structlog_stub)  # type: ignore[arg-type]
 
-from agent.tools.github_tool import GitHubTool
+from agent.tools.github_tool import GitHubTool  # noqa: E402 - needs the stub above
 
 
 class DummyResponse:

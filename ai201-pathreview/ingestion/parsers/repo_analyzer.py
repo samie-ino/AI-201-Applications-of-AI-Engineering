@@ -26,7 +26,7 @@ class RepoAnalyzer(BaseParser):
         "scala": "Scala",
     }
 
-    def parse(self, content: str | bytes) -> ParseResult:
+    def parse(self, content: dict | str | bytes) -> ParseResult:
         """
         Analyze GitHub repository metadata.
 

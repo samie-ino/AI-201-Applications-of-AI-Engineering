@@ -1,6 +1,7 @@
 """Check if generated feedback is supported by retrieved context."""
 
 import re
+
 import structlog
 
 logger = structlog.get_logger()
@@ -8,6 +9,30 @@ logger = structlog.get_logger()
 
 class FaithfulnessChecker:
     """Verify that feedback claims are supported by context."""
+
+    STOP_WORDS = {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "and",
+        "or",
+        "but",
+        "in",
+        "of",
+        "to",
+        "for",
+        "that",
+    }
+
+    # Credit given to a claim that overlaps the context on a single meaningful
+    # term: some grounding, but not enough to call the claim supported.
+    PARTIAL_SUPPORT = 0.4
 
     def check(self, feedback: str, context_chunks: list[dict]) -> float:
         """Check faithfulness of feedback to context.
@@ -20,8 +45,11 @@ class FaithfulnessChecker:
             Faithfulness score 0.0-1.0 (ratio of supported claims)
         """
         if not feedback or not context_chunks:
-            logger.info("faithfulness_empty_input", has_feedback=bool(feedback),
-                       has_chunks=bool(context_chunks))
+            logger.info(
+                "faithfulness_empty_input",
+                has_feedback=bool(feedback),
+                has_chunks=bool(context_chunks),
+            )
             return 0.0
 
         # Extract key claims from feedback (sentences)
@@ -30,21 +58,20 @@ class FaithfulnessChecker:
             logger.info("faithfulness_no_claims_extracted")
             return 0.5  # Default to neutral if no extractable claims
 
-        # Concatenate context text
-        context_text = " ".join([
-            chunk.get("text", "") for chunk in context_chunks
-        ])
+        # Concatenate context text. A chunk may carry an explicit None.
+        context_text = " ".join([chunk.get("text") or "" for chunk in context_chunks])
 
-        # Check each claim for support
-        supported = 0
-        for claim in claims:
-            if self._is_supported(claim, context_text):
-                supported += 1
+        # Score each claim, so partially grounded feedback lands mid-range
+        # rather than being forced to 0.0 or 1.0.
+        claim_scores = [self._claim_support(claim, context_text) for claim in claims]
+        score = sum(claim_scores) / len(claim_scores)
 
-        score = supported / len(claims) if claims else 0.0
-
-        logger.info("faithfulness_checked", claims_count=len(claims),
-                   supported_count=supported, score=score)
+        logger.info(
+            "faithfulness_checked",
+            claims_count=len(claims),
+            supported_count=sum(1 for s in claim_scores if s == 1.0),
+            score=score,
+        )
 
         return score
 
@@ -59,12 +86,26 @@ class FaithfulnessChecker:
             List of claims (sentences)
         """
         # Split by sentence (simple regex)
-        sentences = re.split(r'[.!?]+', text)
+        sentences = re.split(r"[.!?]+", text)
         claims = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 10]
         return claims[:10]  # Limit to 10 claims for scoring
 
-    @staticmethod
-    def _is_supported(claim: str, context: str) -> bool:
+    @classmethod
+    def _meaningful_tokens(cls, text: str) -> set[str]:
+        """Tokenize text into lowercase content words.
+
+        Surrounding punctuation is stripped so "Python," and "Python" match.
+        """
+        tokens = (token.strip(".,;:!?()[]\"'") for token in text.lower().split())
+        return {token for token in tokens if token and token not in cls.STOP_WORDS}
+
+    @classmethod
+    def _overlap_size(cls, claim: str, context: str) -> int:
+        """Count meaningful terms a claim shares with the context."""
+        return len(cls._meaningful_tokens(claim) & cls._meaningful_tokens(context))
+
+    @classmethod
+    def _is_supported(cls, claim: str, context: str) -> bool:
         """Check if a claim is supported by context.
 
         Args:
@@ -74,15 +115,17 @@ class FaithfulnessChecker:
         Returns:
             True if claim is supported
         """
-        # Tokenize and check for keyword overlap
-        claim_tokens = set(claim.lower().split())
-        context_tokens = set(context.lower().split())
+        # Require at least two meaningful terms in common; a single shared term
+        # is too easily coincidental.
+        return cls._overlap_size(claim, context) >= 2
 
-        # Require at least some meaningful overlap
-        overlap = claim_tokens & context_tokens
-        # Filter out common stop words
-        stop_words = {'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
-                     'and', 'or', 'but', 'in', 'of', 'to', 'for', 'that'}
-        meaningful_overlap = overlap - stop_words
+    @classmethod
+    def _claim_support(cls, claim: str, context: str) -> float:
+        """Score how well the context grounds a single claim, 0.0-1.0."""
+        overlap = cls._overlap_size(claim, context)
 
-        return len(meaningful_overlap) >= 2
+        if overlap >= 2:
+            return 1.0
+        if overlap == 1:
+            return cls.PARTIAL_SUPPORT
+        return 0.0

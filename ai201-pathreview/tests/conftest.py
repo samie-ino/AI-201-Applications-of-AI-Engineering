@@ -1,6 +1,27 @@
 """Shared test fixtures for PathReview."""
 
 import pytest
+import structlog
+
+
+@pytest.fixture(autouse=True)
+def structlog_to_stdlib():
+    """Route structlog through stdlib logging so caplog can capture log output.
+
+    By default structlog writes straight to stdout, which pytest's caplog
+    fixture never sees.
+    """
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_log_level,
+            structlog.dev.ConsoleRenderer(colors=False),
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=False,
+    )
+    yield
+    structlog.reset_defaults()
 
 
 @pytest.fixture

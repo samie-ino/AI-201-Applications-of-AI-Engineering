@@ -1,27 +1,42 @@
 """Bias detection in generated feedback."""
 
 import re
+
 import structlog
 
 logger = structlog.get_logger()
 
 
+# Building blocks shared by the bias patterns below. Keeping them separate makes
+# the patterns readable and keeps the wording variants in one place.
+_EDUCATION = r"(?:coding\s+)?(?:bootcamp|self[\s-]?taught|online\s+course)"
+_PEOPLE = r"(?:graduates?|developers?|programmers?|engineers?|attendees?)"
+_NEGATION = r"(?:can'?t|cannot|won'?t|will\s+not|doesn'?t|does\s+not|don'?t|do\s+not)"
+_DEFICIT = r"(?:lacks?|lacking|missing)"
+_DEFICIENCY = r"(?:rigor|fundamentals|proper\s+training|real\s+skills|depth|experience)"
+
+
 class BiasDetector:
     """Detect biased language in feedback."""
 
-    # Genuinely dismissive phrases about educational background
+    # Genuinely dismissive phrases about educational background.
+    # The optional subject group lets each pattern cover "bootcamp X ...",
+    # "bootcamp graduates ..." and bare "bootcamp ..." phrasings alike.
+    _SUBJECT = rf"(?:{_PEOPLE}|education|training|attendance)?\s*"
+
     DISMISSIVE_PATTERNS = [
-        r"(?:bootcamp|self-taught|online\s+course)\s+(?:education|training)\s+is\s+(?:insufficient|inadequate|lacks)",
-        r"(?:bootcamp|self-taught)\s+(?:graduates?|developers?)\s+(?:lack|missing)\s+(?:rigor|fundamentals|proper\s+training)",
-        r"(?:bootcamp|coding\s+bootcamp)\s+(?:doesn't|does\s+not)\s+prepare\s+(?:you|developers?)",
-        r"(?:self-taught|bootcamp)\s+is\s+(?:not|never)\s+(?:equal|comparable)\s+to\s+(?:university|traditional|formal)",
+        rf"{_EDUCATION}\s+{_SUBJECT}(?:is|are)\s+(?:insufficient|inadequate|inferior|not\s+enough)",
+        rf"{_EDUCATION}\s+{_SUBJECT}{_DEFICIT}\s+{_DEFICIENCY}",
+        rf"{_EDUCATION}\s+{_SUBJECT}{_NEGATION}\s+\w+",
+        rf"{_EDUCATION}\s+{_SUBJECT}(?:is|are)\s+(?:not|never)\s+(?:equal|comparable)",
+        rf"{_EDUCATION}\s+\w*\s*means\s+(?:inadequate|insufficient|poor|weak|{_DEFICIT})",
     ]
 
     # Demographic assumptions (about age, background, identity)
     DEMOGRAPHIC_PATTERNS = [
-        r"(?:young|old|aged)\s+(?:person|developer|programmer)\s+(?:can't|cannot|won't|will\s+not)",
-        r"(?:person\s+from|coming\s+from)\s+(?:poor|rich|working[\s-]?class)",
-        r"(?:immigrant|international|foreign)\s+developers?.*(?:can't|cannot|won't|struggle)",
+        rf"(?:young|old|older|aged|elderly)\s+(?:persons?|people|{_PEOPLE})\s+{_NEGATION}",
+        rf"(?:persons?|people|{_PEOPLE})\s+(?:coming\s+)?from\s+(?:poor|rich|wealthy|working[\s-]?class)",
+        rf"(?:immigrant|international|foreign)\s+{_PEOPLE}.*(?:{_NEGATION}|struggle)",
     ]
 
     @staticmethod

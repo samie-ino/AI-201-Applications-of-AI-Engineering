@@ -1,21 +1,22 @@
 from uuid import UUID
+
 import structlog
 from sqlalchemy import select
 
+from api.schemas.profile import ProfileCreate, ProfileUpdate
+from core.models.ingested_source import IngestedSource
 from core.models.profile import Profile
 from core.models.review import Review
-from core.models.ingested_source import IngestedSource
-from api.schemas.profile import ProfileCreate, ProfileUpdate
 
 log = structlog.get_logger()
 
 
 async def create_profile(
     db,
-    user_id: UUID,
+    user_id: str,
     data: ProfileCreate,
-    resume_filename: str = None,
-    resume_text: str = None,
+    resume_filename: str | None = None,
+    resume_text: str | None = None,
 ) -> Profile:
     """
     Create a new profile for a user.
@@ -36,14 +37,12 @@ async def create_profile(
 async def get_profile(
     db,
     profile_id: UUID,
-    user_id: UUID,
+    user_id: str,
 ) -> Profile | None:
     """
     Get a profile by ID, checking ownership.
     """
-    stmt = select(Profile).where(
-        (Profile.id == profile_id) & (Profile.user_id == user_id)
-    )
+    stmt = select(Profile).where((Profile.id == profile_id) & (Profile.user_id == user_id))
     result = await db.execute(stmt)
     return result.scalars().first()
 
@@ -51,7 +50,7 @@ async def get_profile(
 async def update_profile(
     db,
     profile_id: UUID,
-    user_id: UUID,
+    user_id: str,
     data: ProfileUpdate,
 ) -> Profile | None:
     """
@@ -75,7 +74,7 @@ async def update_profile(
 async def delete_profile(
     db,
     profile_id: UUID,
-    user_id: UUID,
+    user_id: str,
 ) -> bool:
     """
     Delete a profile and cascade delete reviews and ingested sources.
