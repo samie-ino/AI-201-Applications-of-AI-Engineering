@@ -38,11 +38,13 @@ class RepoAnalyzer(BaseParser):
         """
         if isinstance(content, bytes):
             import json
+
             repo_data = json.loads(content.decode("utf-8"))
         elif isinstance(content, dict):
             repo_data = content
         elif isinstance(content, str):
             import json
+
             repo_data = json.loads(content)
         else:
             raise ValueError("Content must be a dict, JSON string, or JSON bytes")
@@ -114,7 +116,12 @@ class RepoAnalyzer(BaseParser):
         )
 
     def _calculate_contribution_streak(self, repo_data: dict) -> int:
-        """Calculate the longest consecutive day streak from commit history."""
+        """Return an explicit streak when supplied, otherwise calculate it.
+
+        ``contribution_streak`` is treated as an authoritative pre-computed
+        value. The contribution history is used only when that field is
+        missing or set to ``None``.
+        """
         if "contribution_streak" in repo_data:
             explicit_streak = repo_data.get("contribution_streak")
             if explicit_streak is not None:
