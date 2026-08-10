@@ -8,6 +8,8 @@ As of August 10, 2026, no reviewer feedback or review comments were received on 
 
 ## What I learned
 
+This contribution taught me that a small feature can still require careful decisions about data contracts, test boundaries, and repository history. I learned to make the intended behavior explicit before extending defensive parsing, to use focused edge-case tests to define the contract, and to inspect a pull request's complete diff instead of treating a green merge status as proof that the change is safe to merge.
+
 ### Implementation
 
 The contribution-streak behavior belongs in the repository analyzer, where repository metadata is normalized for downstream consumers. The implementation needs to tolerate inconsistent history payloads, including alternate date and contribution-count field names, string entries, invalid dates, empty history, gaps, and duplicate dates.
